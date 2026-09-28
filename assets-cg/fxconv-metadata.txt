@@ -1,0 +1,7 @@
+font5x7.png:
+  name: font_dasm
+  type: font
+  charset: ascii
+  grid.size: 5x7
+  grid.padding: 1
+  grid.border: 0
