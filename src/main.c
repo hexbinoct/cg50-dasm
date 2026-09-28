@@ -8,6 +8,7 @@
 // Keys (listing):  UP/DOWN line · LEFT/RIGHT page · SHIFT+LEFT/RIGHT ±0x1000 · +/- shift by 1 byte
 //                  EXE follow branch / literal · EXIT back (history) · F1 open · F2 goto (hex: digits,
 //                  F1-F6 = A-F) · F3 hex view · F4 strings from here · F5 header · F6 OS ROM · MENU quit
+//                  OPTN font: large smooth (anti-aliased 7x11, default) / small (5x7, more rows)
 #include <gint/display.h>
 #include <gint/keyboard.h>
 #include <gint/gint.h>
@@ -18,15 +19,24 @@
 #include "sh4dec.h"
 #include "source.h"
 #include "names.h"
+#include "font_aa.h"
 
 extern font_t font_dasm;
 
-#define CW      6           /* character advance of the 5x7 font */
-#define COLS    64
-#define ROW_H   8
-#define LIST_Y  10
-#define ROWS    24          /* 10 + 24*8 = 202; status bar at 207 */
-#define STAT_Y  207
+/* Text metrics, set by apply_font() for the current font mode (OPTN switches):
+ * large = anti-aliased DejaVu Sans Mono in 7x11 cells (src/font_aa.h): 56 cols x 17 rows;
+ * small = the 1-bit 5x7 gint font in 6x8 cells: 64 cols x 24 rows. */
+static int big = 1;
+static int CW, COLS, ROW_H, TITLE_H, LIST_Y, ROWS, STAT_Y;
+static int HEXB;            /* bytes per hex-view row: 16 small, 8 large */
+
+static void apply_font(void) {
+    if (big) { CW = AA_CW; ROW_H = AA_CH; TITLE_H = AA_CH + 1; HEXB = 8; COLS = DWIDTH / CW; }
+    else { CW = 6; ROW_H = 8; TITLE_H = 9; HEXB = 16; COLS = 64; }
+    LIST_Y = TITLE_H + 1 + (big ? 1 : 0);
+    STAT_Y = big ? DHEIGHT - AA_CH - 1 : 207;
+    ROWS = (STAT_Y - 1 - LIST_Y) / ROW_H;   /* small: (206-10)/8 = 24 */
+}
 
 #define C_BG     C_RGB(1, 2, 3)
 #define C_TITLE  C_RGB(4, 10, 18)
@@ -67,15 +77,49 @@ static uint32_t strs_from;
 
 /* ------------------------------------------------------------------ drawing */
 
-static void text(int col, int y, int color, const char *s) { dtext(col * CW, y, color, s); }
-
-static void textn(int col, int y, int color, const char *s, int maxcols) {
-    if (maxcols <= 0) return;
-    dtext_opt(col * CW, y, color, C_NONE, DTEXT_LEFT, DTEXT_TOP, s, maxcols);
+/* src over dst in RGB565 with 8-bit coverage a */
+static inline uint16_t blend565(uint16_t dst, int src, int a) {
+    a += a >> 7;   /* 0..256 */
+    int r = (dst >> 11), g = (dst >> 5) & 63, b = dst & 31;
+    r += (((src >> 11) - r) * a) >> 8;
+    g += ((((src >> 5) & 63) - g) * a) >> 8;
+    b += (((src & 31) - b) * a) >> 8;
+    return (uint16_t)((r << 11) | (g << 5) | b);
 }
 
+/* anti-aliased text at pixel (x, y), at most maxch characters, blended over what is drawn */
+static void aa_text(int x, int y, int color, const char *s, int maxch) {
+    for (int i = 0; s[i] && i < maxch; i++, x += AA_CW) {
+        int c = (unsigned char)s[i];
+        if (c == ' ') continue;
+        if (c < 0x20 || c > 0x7e) c = '?';
+        const uint8_t *g = font_aa[c - 0x20];
+        for (int r = 0; r < AA_CH; r++) {
+            int yy = y + r;
+            if (yy < 0 || yy >= DHEIGHT) continue;
+            uint16_t *row = gint_vram + yy * DWIDTH;
+            for (int k = 0; k < AA_CW; k++) {
+                int a = g[r * AA_CW + k], xx = x + k;
+                if (!a || xx < 0 || xx >= DWIDTH) continue;
+                row[xx] = a >= 250 ? (uint16_t)color : blend565(row[xx], color, a);
+            }
+        }
+    }
+}
+
+/* text at pixel x in the current font mode */
+static void ptext(int x, int y, int color, const char *s, int maxch) {
+    if (maxch <= 0) return;
+    if (big) aa_text(x, y, color, s, maxch);
+    else dtext_opt(x, y, color, C_NONE, DTEXT_LEFT, DTEXT_TOP, s, maxch);
+}
+
+static void text(int col, int y, int color, const char *s) { ptext(col * CW, y, color, s, COLS); }
+
+static void textn(int col, int y, int color, const char *s, int maxcols) { ptext(col * CW, y, color, s, maxcols); }
+
 static void title_bar(const char *left, const char *right) {
-    drect(0, 0, DWIDTH - 1, 8, C_TITLE);
+    drect(0, 0, DWIDTH - 1, TITLE_H - 1, C_TITLE);
     textn(0, 1, C_KEY, left, 40);
     if (right) { int n = (int)strlen(right); if (n > 63) n = 63; textn(COLS - n, 1, C_TEXT, right, n); }
 }
@@ -87,9 +131,9 @@ static void status_bar(const char *labels[6]) {
         int x0 = i * 64;
         drect(x0 + 1, STAT_Y, x0 + 62, DHEIGHT - 1, C_RGB(6, 14, 24));
         int n = (int)strlen(labels[i]);
-        dtext(x0 + 32 - n * CW / 2, STAT_Y + 1, C_KEY, labels[i]);
+        ptext(x0 + 32 - n * CW / 2, STAT_Y + 1, C_KEY, labels[i], n);
     }
-    if (msg[0]) { drect(0, STAT_Y - 1, DWIDTH - 1, DHEIGHT - 1, C_STATUS); textn(0, STAT_Y + 1, C_BR, msg, 63); }
+    if (msg[0]) { drect(0, STAT_Y - 1, DWIDTH - 1, DHEIGHT - 1, C_STATUS); textn(0, STAT_Y + 1, C_BR, msg, COLS); }
 }
 
 /* ------------------------------------------------------------------ helpers */
@@ -113,7 +157,7 @@ static void goto_addr(uint32_t a, int remember) {
     if (!src_contains(&S, a)) { snprintf(msg, sizeof msg, "0x%08lx is outside %s", (unsigned long)a, S.name); return; }
     if (remember) push_hist();
     top = clamp_addr(a & ~1u); cur = 0;
-    if (view == V_HEX) top &= ~15u;
+    if (view == V_HEX) top &= ~(uint32_t)(HEXB - 1);
 }
 
 /* ------------------------------------------------------------------ listing */
@@ -188,7 +232,7 @@ static void draw_listing(void) {
         textn(col, y, color, txt, COLS - col);
         int ccol = comment_for(a, &in, com, sizeof com);
         if (com[0]) {
-            int cc = col + n + 2; if (cc < 42) cc = 42;
+            int cc = col + n + 2, cmin = big ? 36 : 42; if (cc < cmin) cc = cmin;
             if (cc < COLS - 2) { text(cc, y, C_DIM, ";"); textn(cc + 1, y, ccol, com, COLS - cc - 1); }
         }
         prev_delay = in.delay;
@@ -228,26 +272,26 @@ static void draw_hex(void) {
     dclear(C_BG);
     char t[80], right[24];
     snprintf(right, sizeof right, "hex");
-    snprintf(t, sizeof t, "%s  0x%08lx", S.name, (unsigned long)(top + 16u * (uint32_t)cur));
+    snprintf(t, sizeof t, "%s  0x%08lx", S.name, (unsigned long)(top + (uint32_t)HEXB * (uint32_t)cur));
     title_bar(t, right);
     uint8_t b[16];
     for (int i = 0; i < ROWS; i++) {
-        uint32_t a = top + 16u * (uint32_t)i;
+        uint32_t a = top + (uint32_t)HEXB * (uint32_t)i;
         int y = LIST_Y + i * ROW_H;
         if (i == cur) drect(0, y - 1, DWIDTH - 1, y + ROW_H - 2, C_CUR);
-        int n = src_bytes(&S, a, b, 16);
+        int n = src_bytes(&S, a, b, HEXB);
         if (n <= 0) continue;
         snprintf(t, sizeof t, "%08lx", (unsigned long)a); text(0, y, C_ADDR, t);
         char *p = t;
-        for (int j = 0; j < 16; j++) {
+        for (int j = 0; j < HEXB; j++) {
             if (j < n) p += sprintf(p, "%02x", b[j]); else { *p++ = ' '; *p++ = ' '; }
             if ((j & 3) == 3) *p++ = ' ';
         }
         *p = 0;
         text(9, y, C_TEXT, t);
-        for (int j = 0; j < 16; j++) t[j] = (j < n && b[j] >= 0x20 && b[j] < 0x7f) ? (char)b[j] : (j < n ? '.' : ' ');
-        t[16] = 0;
-        text(46, y, C_ASCII, t);
+        for (int j = 0; j < HEXB; j++) t[j] = (j < n && b[j] >= 0x20 && b[j] < 0x7f) ? (char)b[j] : (j < n ? '.' : ' ');
+        t[HEXB] = 0;
+        text(9 + HEXB * 2 + HEXB / 4 + 1, y, C_ASCII, t);   /* small: col 46 */
     }
     static const char *lab[6] = { "OPEN", "GOTO", "LIST", "STR", "HDR", "ROM" };
     status_bar(lab);
@@ -292,7 +336,8 @@ static void draw_strings(void) {
         int k = stop_ + i, y = LIST_Y + i * ROW_H;
         if (k == ssel) drect(0, y - 1, DWIDTH - 1, y + ROW_H - 2, C_CUR);
         snprintf(t, sizeof t, "%08lx %3d", (unsigned long)strs[k].addr, strs[k].len); text(0, y, C_ADDR, t);
-        int n = strs[k].len < 50 ? strs[k].len : 50;
+        int w = COLS - 14 < 50 ? COLS - 14 : 50;
+        int n = strs[k].len < w ? strs[k].len : w;
         n = src_bytes(&S, strs[k].addr, b, n);
         for (int j = 0; j < n; j++) t[j] = (char)b[j];
         t[n] = 0;
@@ -376,7 +421,7 @@ static void draw_picker(void) {
         snprintf(t, sizeof t, "%-28s %8lu", files[k].name, (unsigned long)files[k].size);
         text(2, y, k == fsel ? C_KEY : C_TEXT, t);
     }
-    text(2, LIST_Y + (ROWS - 1) * ROW_H, C_DIM, "EXE open  F6 OS ROM  MENU quit");
+    text(2, LIST_Y + (ROWS - 1) * ROW_H, C_DIM, "EXE open  F6 OS ROM  OPTN font  MENU quit");
     static const char *lab[6] = { 0, 0, 0, 0, 0, "ROM" };
     status_bar(lab);
 }
@@ -449,6 +494,7 @@ static void scroll_rows(int delta_rows, int step) {
 
 int main(void) {
     dfont(&font_dasm);
+    apply_font();
     names_init();
     nfiles = src_scan_g3a(files, 64);
     redraw();
@@ -458,6 +504,16 @@ int main(void) {
         if (ev.type == KEYEV_OSMENU) { redraw(); continue; }
         int k = ev.key, shift = ev.shift;
         msg[0] = 0;
+
+        if (k == KEY_OPTN) {   /* font setting: large smooth <-> small */
+            big = !big;
+            apply_font();
+            if (cur >= ROWS) cur = ROWS - 1;
+            if (view == V_HEX) top &= ~(uint32_t)(HEXB - 1);
+            snprintf(msg, sizeof msg, "font: %s  (OPTN switches)", big ? "large, smooth" : "small");
+            redraw();
+            continue;
+        }
 
         if (view == V_PICKER) {
             if (k == KEY_UP && fsel > 0) fsel--;
@@ -473,10 +529,10 @@ int main(void) {
         switch (k) {
         case KEY_F1: view = V_PICKER; break;
         case KEY_F2: if (view == V_STRINGS || view == V_HEADER) view = V_LIST; goto_dialog(); break;
-        case KEY_F3: if (view == V_HEX) view = V_LIST; else { view = V_HEX; top &= ~15u; cur = 0; } break;
+        case KEY_F3: if (view == V_HEX) view = V_LIST; else { view = V_HEX; top &= ~(uint32_t)(HEXB - 1); cur = 0; } break;
         case KEY_F4:
             if (view == V_STRINGS) view = V_LIST;
-            else { scan_strings(top + (uint32_t)cur * (view == V_HEX ? 16u : 2u)); view = V_STRINGS; }
+            else { scan_strings(top + (uint32_t)cur * (view == V_HEX ? (uint32_t)HEXB : 2u)); view = V_STRINGS; }
             break;
         case KEY_F5: view = (view == V_HEADER) ? V_LIST : V_HEADER; break;
         case KEY_F6: if (!S.is_rom) open_rom(); else snprintf(msg, sizeof msg, "already browsing the OS ROM"); break;
@@ -501,11 +557,11 @@ int main(void) {
             }
         } else if (view == V_HEX) {
             switch (k) {
-            case KEY_UP: scroll_rows(-1, 16); top &= ~15u; break;
-            case KEY_DOWN: scroll_rows(1, 16); top &= ~15u; break;
-            case KEY_LEFT: top = clamp_addr(top - (shift ? 0x1000u : ROWS * 16u)) & ~15u; break;
-            case KEY_RIGHT: top = clamp_addr(top + (shift ? 0x1000u : ROWS * 16u)) & ~15u; break;
-            case KEY_EXE: { uint32_t a = top + 16u * (uint32_t)cur; view = V_LIST; goto_addr(a, 1); break; }
+            case KEY_UP: scroll_rows(-1, HEXB); top &= ~(uint32_t)(HEXB - 1); break;
+            case KEY_DOWN: scroll_rows(1, HEXB); top &= ~(uint32_t)(HEXB - 1); break;
+            case KEY_LEFT: top = clamp_addr(top - (shift ? 0x1000u : (uint32_t)(ROWS * HEXB))) & ~(uint32_t)(HEXB - 1); break;
+            case KEY_RIGHT: top = clamp_addr(top + (shift ? 0x1000u : (uint32_t)(ROWS * HEXB))) & ~(uint32_t)(HEXB - 1); break;
+            case KEY_EXE: { uint32_t a = top + (uint32_t)HEXB * (uint32_t)cur; view = V_LIST; goto_addr(a, 1); break; }
             case KEY_EXIT: view = V_LIST; break;
             default: break;
             }
