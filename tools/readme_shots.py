@@ -21,11 +21,13 @@ PARENTS = [os.path.join(DASM, "..", "..", "casio-cg50"), os.path.join(DASM, ".."
 # key = "row-col" (re/KEYMAP.md). The first DOWN is swallowed while DASM starts up.
 DOWN, UP, EXE, EXIT = "2-7", "3-7", "2-1", "3-7"
 F1, F2, F3, F4, F5, F6 = "6-9", "5-9", "4-9", "3-9", "2-9", "1-9"
-OPTN, VARS = "5-8", "4-8"
+OPTN, VARS, XOT = "5-8", "4-8", "6-6"
 
 # (key, screenshot name or None); DASM.g3a is entry 20 of the picker on the 32 MB dump
 SCRIPT = [(DOWN, None)] * 20 + [(DOWN, "picker"), (EXE, None), (DOWN, "listing"),
-          (F3, "hex"), (F3, None), (F5, "header"), (F5, None), (OPTN, "small-font"), (OPTN, None)]
+          (F3, "hex"), (F3, None), (F5, "header"), (F5, None), (OPTN, "small-font"), (OPTN, None),
+          (VARS, None), (DOWN, None), (DOWN, None), (DOWN, "functions"), (EXE, "function"),
+          (XOT, "references")]
 
 
 def main():

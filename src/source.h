@@ -43,6 +43,9 @@ void src_close(src_t *s);
 int  src_read(src_t *s, uint32_t addr, int size, uint32_t *out);
 /* Copy up to [n] bytes at [addr] into buf; returns bytes copied (0 outside). */
 int  src_bytes(src_t *s, uint32_t addr, uint8_t *buf, int n);
+/* The 4 KB page holding [addr] (page-aligned address), NULL outside or on a read error. For a
+ * file the pointer is a cache slot: valid only until the next src_* call on the same source. */
+const uint8_t *src_page(src_t *s, uint32_t addr);
 static inline int src_contains(const src_t *s, uint32_t addr) {
     return addr >= s->base && addr - s->base < s->size;
 }

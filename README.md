@@ -2,8 +2,9 @@
 
 DASM is a gint add-in that turns the Casio fx-CG50 into its own reverse-engineering tool.
 Pick any add-in (`.g3a`) in storage memory, or the calculator's OS ROM itself, and browse
-it as a colour disassembly listing. Follow calls and jumps, then come back. Read the literal
-pools, see which OS syscall is being called, and switch to a hex dump or a strings list.
+it as a colour disassembly listing. Follow calls and jumps, then come back. See every function
+in the file and, for any function or address, everything that calls or references it. Read the
+literal pools, see which OS syscall is being called, and switch to a hex dump or a strings list.
 
 It runs on the real calculator and on our desktop emulator (the parent project,
 `casio-cg50`). All the screenshots below come from the emulator running a full dump of a real
@@ -13,8 +14,12 @@ fx-CG50, and show DASM disassembling itself.
 |---|---|
 | ![File picker](docs/img/picker.png) | ![Disassembly listing](docs/img/listing.png) |
 | **File picker:** every `.g3a` in storage memory, with sizes | **Listing:** address · opcode · instruction · comment |
-| ![Hex view](docs/img/hex.png) | ![Header pane](docs/img/header.png) |
-| **Hex view (F3):** synced to the listing, with ASCII | **Header (F5):** name, version, sizes, checksum, the add-in's icon |
+| ![Function list](docs/img/functions.png) | ![References](docs/img/references.png) |
+| **Functions (VARS):** every function found, with its size | **References (X,θ,T):** everything that calls this function, and from where |
+| ![A function in the listing](docs/img/function.png) | ![Hex view](docs/img/hex.png) |
+| **Function starts** are marked by a line and their name, and literal pools show as data | **Hex view (F3):** synced to the listing, with ASCII |
+| ![Header pane](docs/img/header.png) | |
+| **Header (F5):** name, version, sizes, checksum, the add-in's icon | |
 
 ## What it can do
 
@@ -29,6 +34,17 @@ fx-CG50, and show DASM disassembling itself.
 - **Calls and jumps followed:** EXE on a `bsr`/`bra`/`bt`/`bf` jumps to the target, and EXIT
   comes back (32 levels of history). `jsr @rN`/`jmp @rN`/`braf`/`bsrf` are resolved by
   scanning back for the load of `rN`.
+- **Function detection (VARS):** finds the functions of the file or the OS by following the
+  code from its entry points, the same way IDA and Ghidra do (see below). The list shows each
+  function's address, name and size, and EXE jumps to it. In the listing, each function start
+  gets a separator line and its name, and the title bar shows where you are
+  (`sub_00300130+0x1c`).
+- **Cross-references (X,θ,T):** everything that refers to an address: `bsr`/`bra`/`bt`/`bf`,
+  `jsr`/`jmp` through a register loaded with it, literal loads, `mova`, and pointers in data.
+  Each line shows the instruction and the function it is in; EXE goes there. Press X,θ,T again
+  on a reference to see who calls *that* function, walking up the call chain.
+- **Literal pools as data:** once functions are known, the words after a function's code that
+  its `mov.l` instructions load are shown as `.long 0x…`, not decoded as fake instructions.
 - **Syscalls named:** OS syscall handlers are named from the running OS's own syscall table,
   so it fits whatever OS version is installed (273 names from libfxcg). An add-in's syscall
   trampolines are resolved to the syscall's name.
@@ -54,6 +70,35 @@ gint fonts are 1-bit, so the large font is drawn by DASM itself. `tools/make_fon
 the 95 printable ASCII glyphs to 8-bit coverage in `src/font_aa.h`, and `aa_text()` in
 `src/main.c` blends them into VRAM over whatever is behind them (row highlight, title bar).
 
+## How function detection works
+
+A linear sweep can't tell code from data: tables and literal pools decode as plausible
+instructions, and a sweep over DASM's own binary "found" hundreds of fake calls. So DASM does
+**recursive traversal**, as IDA and Ghidra do:
+
+1. **Start** from the entry points: the add-in's entry at `0x00300000`, or for the OS ROM the
+   reset vector and every handler in the OS's syscall table.
+2. **Follow the code** of each function: fall-through, `bt`/`bf`/`bra` targets and gcc's jump
+   tables (`mova` + `mov.w @(r0,Rn)` + `braf`, sized from the `cmp/hi` range check), until
+   `rts` or `jmp`. `bsr` targets, and `jsr`/`jmp @Rn` targets whose `Rn` was loaded from a
+   literal on the same path, become new functions.
+3. **Code nothing calls directly:** right after a function's literal pool and padding, a
+   *prologue* (a register push or `sts.l pr,@-r15` within the first 3 instructions, all real
+   instructions) starts another function. A code address stored in a literal pool or in data
+   starts a function if it has that prologue, or if it sits right after another function and
+   explores cleanly.
+
+Measured against the ELF symbols of DASM's own build, it finds **88% of the C functions**, with
+7 false starts (3 of them are gint's assembly interrupt handlers, which are real code). On OS
+3.60 it finds **12,058 functions**, including all but 89 of the 10,242 that Ghidra's own analysis
+finds. `tools/proto_funcs.py` is the Python prototype used to tune these rules and score them.
+
+Time on a real calculator, estimated on the emulator: a small add-in (DASM itself, 113 KB) takes
+well under a second and is analysed as soon as it is opened; khicas (2 MB, read through BFile)
+takes about 10 s; the 12 MB OS ROM about 15 s. A progress bar shows while it runs, and EXIT
+stops it and keeps what was found. Add-ins over 256 KB and the ROM are analysed the first time
+you press VARS or X,θ,T.
+
 ## Keys
 
 | Key | In the listing |
@@ -67,6 +112,8 @@ the 95 printable ASCII glyphs to 8-bit coverage in `src/font_aa.h`, and `aa_text
 | F2 | go to an address: digits, F1–F6 = A–F, DEL, EXE |
 | F3 / F4 / F5 | hex view / strings from here / header |
 | F6 | browse the OS ROM |
+| VARS | function list (EXE goes to the function, EXIT comes back) |
+| X,θ,T | references to the function on the cursor line, or to this instruction's target |
 | OPTN | switch the font (large smooth / small) |
 | MENU | back to the calculator's MAIN MENU |
 
@@ -100,6 +147,7 @@ The output is `DASM.g3a`, which is committed. Helper scripts:
 
 ## Status and next steps
 
-Verified on the real calculator and on the emulator, including reading every add-in's contents.
-Next, in order (see `NOTES.md`): function detection, cross-references ("who calls this?"),
-bookmarks and comments saved to a side file, and an overview bar of the whole file.
+The browser is verified on the real calculator and on the emulator, including reading every
+add-in's contents. Function detection and cross-references are verified on the emulator.
+Next (see `NOTES.md`): bookmarks and comments saved to a side file (which could also cache the
+function table, so the OS ROM doesn't take 15 s each time), and an overview bar of the whole file.

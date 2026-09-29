@@ -7,7 +7,7 @@
 #define G3A_HEADER   0x7000
 #define ADDIN_CODE   0x00300000u   /* the OS maps the code image here */
 #define ROM_BASE     0x80000000u
-#define ROM_SIZE     0x01000000u   /* whole 16 MB NOR flash (OS + storage) */
+#define ROM_SIZE     0x02000000u   /* whole 32 MB NOR flash (OS + storage) */
 
 /* ---------- OS-world helpers (BFile only works after a world switch) ---------- */
 
@@ -135,6 +135,13 @@ static const uint8_t *page_for(src_t *s, uint32_t off) {
     if (rc < 0) { s->last_err = rc; return 0; }
     s->tag[victim] = pg; s->stamp[victim] = ++s->clock;
     return dst;
+}
+
+const uint8_t *src_page(src_t *s, uint32_t addr) {
+    if (!src_contains(s, addr)) return 0;
+    uint32_t off = (addr - s->base) & ~(SRC_PAGE_SIZE - 1);
+    if (s->is_rom) return s->rom + off;
+    return page_for(s, off);
 }
 
 int src_bytes(src_t *s, uint32_t addr, uint8_t *buf, int n) {

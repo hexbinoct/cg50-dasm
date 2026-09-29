@@ -13,6 +13,7 @@ set(SOURCES
   src/sh4dec.c
   src/source.c
   src/names.c
+  src/analysis.c
 )
 set(ASSETS
   assets-cg/font5x7.png

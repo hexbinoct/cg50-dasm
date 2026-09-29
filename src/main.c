@@ -9,6 +9,7 @@
 //                  EXE follow branch / literal · EXIT back (history) · F1 open · F2 goto (hex: digits,
 //                  F1-F6 = A-F) · F3 hex view · F4 strings from here · F5 header · F6 OS ROM · MENU quit
 //                  OPTN font: large smooth (anti-aliased 7x11, default) / small (5x7, more rows)
+//                  VARS function list (EXE go) · X,θ,T references to the function / target here
 #include <gint/display.h>
 #include <gint/keyboard.h>
 #include <gint/gint.h>
@@ -20,6 +21,7 @@
 #include "source.h"
 #include "names.h"
 #include "font_aa.h"
+#include "analysis.h"
 
 extern font_t font_dasm;
 
@@ -55,8 +57,9 @@ static void apply_font(void) {
 #define C_KEY    C_RGB(31, 60, 31)
 #define C_DIM    C_RGB(12, 24, 12)
 #define C_ASCII  C_RGB(24, 48, 20)
+#define C_SEP    C_RGB(6, 14, 22)
 
-typedef enum { V_PICKER, V_LIST, V_HEX, V_STRINGS, V_HEADER } view_t;
+typedef enum { V_PICKER, V_LIST, V_HEX, V_STRINGS, V_HEADER, V_FUNCS, V_XREFS } view_t;
 
 static src_t S;
 static int have_src;
@@ -74,6 +77,13 @@ static int nfiles = -1, fsel, ftop;
 static struct { uint32_t addr; uint16_t len; } strs[MAXSTR];
 static int nstrs, ssel, stop_;
 static uint32_t strs_from;
+
+static int fn_sel, fn_top;                    /* function list */
+#define MAXXR 128
+static an_xref_t xr[MAXXR];                   /* reference list */
+static int nxr, xr_total, xr_sel, xr_top;
+static uint32_t xr_target;
+static view_t xr_back = V_LIST;               /* the view EXIT returns to from a list */
 
 /* ------------------------------------------------------------------ drawing */
 
@@ -160,6 +170,70 @@ static void goto_addr(uint32_t a, int remember) {
     if (view == V_HEX) top &= ~(uint32_t)(HEXB - 1);
 }
 
+/* ------------------------------------------------------------------ analysis */
+
+/* A function's name: the OS syscall it implements (ROM), the syscall an add-in stub forwards
+ * to, "start" for the add-in entry, else sub_XXXXXXXX. */
+static const char *func_name(uint32_t a, char *buf, int cap) {
+    const char *nm;
+    if (S.is_rom) { if ((nm = names_for_handler(a))) return nm; }
+    else if (a == S.entry) return "start";
+    else {
+        for (uint32_t p = a; p < a + 8; p += 2) {       /* a stub: loads, then jmp @rN */
+            uint32_t op, t; sh4_insn_t in; char txt[8];
+            if (!src_read(&S, p, 2, &op)) break;
+            sh4_decode((uint16_t)op, p, rd, &S, &in, txt, sizeof txt);
+            if (in.kind == SH4_K_JUMP_REG) {
+                if (names_resolve_indirect(&S, p, &in, &t, &nm) && nm) return nm;
+                break;
+            }
+            if (in.kind != SH4_K_LITERAL && in.kind != SH4_K_NONE) break;
+        }
+    }
+    snprintf(buf, cap, "sub_%08lx", (unsigned long)a);
+    return buf;
+}
+
+/* "name+0x12" for the function holding [a], "" if none */
+static void func_ctx(uint32_t a, char *out, int cap) {
+    char nb[24];
+    int i = an_funcs_ready() ? an_func_containing(a) : -1;
+    if (i < 0) { out[0] = 0; return; }
+    uint32_t f = an_func(i)->addr;
+    const char *nm = func_name(f, nb, sizeof nb);
+    if (a == f) snprintf(out, cap, "%s", nm);
+    else snprintf(out, cap, "%s+0x%lx", nm, (unsigned long)(a - f));
+}
+
+/* Progress screen for the whole-file passes; EXIT stops them (what was found is kept). */
+static int progress(const char *what, uint32_t done, uint32_t total) {
+    char t[64];
+    dclear(C_BG);
+    title_bar(S.name, "analysing");
+    int y = DHEIGHT / 2 - ROW_H * 2;
+    if (total) snprintf(t, sizeof t, "%s  %lu%%", what, (unsigned long)((uint64_t)done * 100 / total));
+    else snprintf(t, sizeof t, "%s  %lu found", what, (unsigned long)done);
+    text(2, y, C_KEY, t);
+    int w = DWIDTH - 4 * CW, x0 = 2 * CW, fill = total ? (int)((uint64_t)done * (uint32_t)w / total) : (int)(done / 16 % (uint32_t)w);
+    drect(x0, y + ROW_H + 2, x0 + w, y + 2 * ROW_H, C_SEP);
+    if (fill > 0) drect(x0, y + ROW_H + 2, x0 + fill, y + 2 * ROW_H, C_ADDR);
+    text(2, y + 3 * ROW_H, C_DIM, "EXIT stops (keeps what was found)");
+    dupdate();
+    clearevents();
+    return keydown(KEY_EXIT);
+}
+
+/* Make sure the function table exists; 0 = usable. */
+static int need_funcs(void) {
+    if (an_funcs_ready()) return 0;
+    int r = an_funcs_build(&S, progress);
+    int n = an_funcs_count();
+    if (r < 0) snprintf(msg, sizeof msg, "out of memory: %d functions kept", n);
+    else if (r > 0) snprintf(msg, sizeof msg, "stopped: %d functions so far", n);
+    else snprintf(msg, sizeof msg, "%d functions  (VARS list, X,T refs)", n);
+    return n ? 0 : -1;
+}
+
 /* ------------------------------------------------------------------ listing */
 
 static int kind_color(const sh4_insn_t *in, const char *txt) {
@@ -208,11 +282,13 @@ static int comment_for(uint32_t pc, const sh4_insn_t *in, char *out, int cap) {
 
 static void draw_listing(void) {
     dclear(C_BG);
-    char t[64], txt[48], com[48], right[24];
-    if (S.is_rom) snprintf(right, sizeof right, "%d/%d", nhist, names_count());
-    else snprintf(right, sizeof right, "fd%d rd%d %d/%d", S.last_fd, S.last_rc, nhist, names_count());
-    snprintf(t, sizeof t, "%s  0x%08lx", S.name, (unsigned long)(top + 2u * (uint32_t)cur));
+    char t[64], txt[48], com[48], right[40];
+    uint32_t here = top + 2u * (uint32_t)cur;
+    func_ctx(here, right, 30);
+    if (!right[0]) snprintf(right, sizeof right, "%d/%d", nhist, names_count());
+    snprintf(t, sizeof t, "%s  0x%08lx", S.name, (unsigned long)here);
     title_bar(t, right);
+    int funcs = an_funcs_ready();
 
     int prev_delay = 0;
     uint32_t op;
@@ -223,14 +299,32 @@ static void draw_listing(void) {
         int y = LIST_Y + i * ROW_H;
         if (i == cur) drect(0, y - 1, DWIDTH - 1, y + ROW_H - 2, C_CUR);
         if (!src_read(&S, a, 2, &op)) { prev_delay = 0; continue; }
-        sh4_decode((uint16_t)op, a, rd, &S, &in, txt, sizeof txt);
         snprintf(t, sizeof t, "%08lx", (unsigned long)a); text(0, y, C_ADDR, t);
         snprintf(t, sizeof t, "%04lx", (unsigned long)op); text(9, y, C_HEXW, t);
+        int fi = funcs ? an_func_before(a) : -1;
+        const an_func_t *f = fi >= 0 ? an_func(fi) : 0;
+        if (f && a >= f->addr + f->size && a < f->addr + f->pool &&     /* its literal pool: */
+            (!(a & 3) || a - 2 >= f->addr + f->size)) {                  /* not the padding */
+            uint32_t v;
+            if (!(a & 3) && src_read(&S, a, 4, &v)) {
+                const char *nm = S.is_rom ? names_for_handler(v) : 0;
+                snprintf(txt, sizeof txt, ".long 0x%08lx", (unsigned long)v);
+                textn(14, y, C_DATA, txt, COLS - 14);
+                if (nm) { text(big ? 36 : 42, y, C_DIM, ";"); textn((big ? 36 : 42) + 1, y, C_NAME, nm, COLS - 43); }
+            } else text(14, y, C_DIM, "  (cont.)");
+            prev_delay = 0;
+            continue;
+        }
+        sh4_decode((uint16_t)op, a, rd, &S, &in, txt, sizeof txt);
         int col = 14 + (prev_delay ? 1 : 0);
         int color = prev_delay ? C_SLOT : kind_color(&in, txt);
         int n = (int)strlen(txt);
         textn(col, y, color, txt, COLS - col);
         int ccol = comment_for(a, &in, com, sizeof com);
+        if (funcs && an_func_at(a) >= 0) {           /* a function starts here */
+            drect(0, y - 1, DWIDTH - 1, y - 1, C_SEP);
+            if (!com[0]) { char nb[24]; snprintf(com, sizeof com, "<%s>", func_name(a, nb, sizeof nb)); ccol = C_NAME; }
+        }
         if (com[0]) {
             int cc = col + n + 2, cmin = big ? 36 : 42; if (cc < cmin) cc = cmin;
             if (cc < COLS - 2) { text(cc, y, C_DIM, ";"); textn(cc + 1, y, ccol, com, COLS - cc - 1); }
@@ -364,7 +458,7 @@ static void draw_header(void) {
     title_bar(t, 0);
     int y = LIST_Y + 2;
     if (S.is_rom) {
-        text(1, y, C_TEXT, "OS ROM mapped at 0x80000000 (P1), 16 MB NOR flash"); y += ROW_H + 2;
+        text(1, y, C_TEXT, "OS ROM mapped at 0x80000000 (P1), 32 MB NOR flash"); y += ROW_H + 2;
         snprintf(t, sizeof t, "syscall table   0x%08lx", (unsigned long)names_table_base()); text(1, y, C_LIT, t); y += ROW_H;
         snprintf(t, sizeof t, "named handlers  %d (libfxcg numbering)", names_count()); text(1, y, C_LIT, t); y += ROW_H;
         uint32_t v;
@@ -404,6 +498,117 @@ static void draw_header(void) {
     status_bar(lab);
 }
 
+/* ------------------------------------------------------------------ function list */
+
+static const char *lab_list[6] = { "OPEN", "GOTO", "HEX", "STR", "HDR", "ROM" };
+
+static void draw_funcs(void) {
+    dclear(C_BG);
+    char t[80], nb[24], right[24];
+    int n = an_funcs_count();
+    snprintf(t, sizeof t, "%s  functions", S.name);
+    snprintf(right, sizeof right, "%d%s", n, an_funcs_partial() ? "+" : "");
+    title_bar(t, right);
+    if (fn_sel >= n) fn_sel = n - 1;
+    if (fn_sel < 0) fn_sel = 0;
+    if (fn_sel < fn_top) fn_top = fn_sel;
+    if (fn_sel >= fn_top + ROWS) fn_top = fn_sel - ROWS + 1;
+    for (int i = 0; i < ROWS && fn_top + i < n; i++) {
+        int k = fn_top + i, y = LIST_Y + i * ROW_H;
+        const an_func_t *f = an_func(k);
+        if (k == fn_sel) drect(0, y - 1, DWIDTH - 1, y + ROW_H - 2, C_CUR);
+        snprintf(t, sizeof t, "%08lx", (unsigned long)f->addr); text(0, y, C_ADDR, t);
+        textn(9, y, k == fn_sel ? C_KEY : C_NAME, func_name(f->addr, nb, sizeof nb), COLS - 9 - 8);
+        snprintf(t, sizeof t, "%6u", f->size); text(COLS - 6, y, C_DIM, t);
+    }
+    if (!n) text(2, LIST_Y + 8, C_DIM, "no functions found");
+    status_bar(lab_list);
+}
+
+/* ------------------------------------------------------------------ references */
+
+static int xref_color(int kind) {
+    switch (kind) {
+    case AN_X_CALL: return C_CALL;
+    case AN_X_JUMP: case AN_X_BRANCH: return C_BR;
+    case AN_X_DATA: return C_DATA;
+    default: return C_LIT;
+    }
+}
+
+static void draw_xrefs(void) {
+    dclear(C_BG);
+    char t[80], nb[24], right[24], txt[48], ctx[48];
+    const char *nm = an_func_at(xr_target) >= 0 ? func_name(xr_target, nb, sizeof nb) : "";
+    snprintf(t, sizeof t, "refs to %08lx %s", (unsigned long)xr_target, nm);
+    if (xr_total > nxr) snprintf(right, sizeof right, "%d of %d", nxr, xr_total);
+    else snprintf(right, sizeof right, "%d", nxr);
+    title_bar(t, right);
+    if (xr_sel < xr_top) xr_top = xr_sel;
+    if (xr_sel >= xr_top + ROWS) xr_top = xr_sel - ROWS + 1;
+    int cmin = big ? 36 : 42;
+    for (int i = 0; i < ROWS && xr_top + i < nxr; i++) {
+        int k = xr_top + i, y = LIST_Y + i * ROW_H;
+        uint32_t a = xr[k].from, v;
+        if (k == xr_sel) drect(0, y - 1, DWIDTH - 1, y + ROW_H - 2, C_CUR);
+        snprintf(t, sizeof t, "%08lx", (unsigned long)a); text(0, y, C_ADDR, t);
+        if (xr[k].kind == AN_X_DATA) { src_read(&S, a, 4, &v); snprintf(txt, sizeof txt, ".long 0x%08lx", (unsigned long)v); }
+        else if (src_read(&S, a, 2, &v)) sh4_decode((uint16_t)v, a, rd, &S, 0, txt, sizeof txt);
+        else txt[0] = 0;
+        textn(9, y, xref_color(xr[k].kind), txt, cmin - 10);
+        func_ctx(a, ctx, sizeof ctx);
+        if (!ctx[0] && xr[k].kind == AN_X_DATA) snprintf(ctx, sizeof ctx, "data");
+        if (ctx[0]) { text(cmin, y, C_DIM, ";"); textn(cmin + 1, y, C_DIM, ctx, COLS - cmin - 1); }
+    }
+    if (!nxr) text(2, LIST_Y + 8, C_DIM, "no references found");
+    status_bar(lab_list);
+}
+
+/* The address X,T asks about: in the listing, the function starting on the cursor line, else
+ * that instruction's target (call, branch, resolved jsr/jmp, pointer literal, mova), else the
+ * cursor address; the selected function in the list; for a reference, the function holding it
+ * (walks up the call chain); the cursor row in the hex view. */
+static uint32_t xref_subject(void) {
+    if (view == V_FUNCS) return an_func(fn_sel) ? an_func(fn_sel)->addr : 0;
+    if (view == V_XREFS) {
+        if (!nxr) return xr_target;
+        int i = an_func_containing(xr[xr_sel].from);
+        return i >= 0 ? an_func(i)->addr : xr[xr_sel].from;
+    }
+    if (view == V_HEX) return top + (uint32_t)HEXB * (uint32_t)cur;
+    uint32_t a = top + 2u * (uint32_t)cur, op, tgt;
+    if (an_func_at(a) >= 0) return a;
+    sh4_insn_t in; char txt[48]; const char *nm;
+    if (!src_read(&S, a, 2, &op)) return a;
+    sh4_decode((uint16_t)op, a, rd, &S, &in, txt, sizeof txt);
+    switch (in.kind) {
+    case SH4_K_BRANCH: case SH4_K_CALL: return in.target;
+    case SH4_K_JUMP_REG: case SH4_K_CALL_REG: return names_resolve_indirect(&S, a, &in, &tgt, &nm) ? tgt : a;
+    case SH4_K_LITERAL: return (in.lit_ok && in.lit_size == 4 && src_contains(&S, in.lit_val)) ? in.lit_val : a;
+    case SH4_K_MOVA: return in.lit_addr;
+    default: return a;
+    }
+}
+
+static void show_xrefs(void) {
+    if (need_funcs() < 0) return;
+    uint32_t target = xref_subject();
+    int n = an_xrefs(&S, target, xr, MAXXR, progress);
+    if (n < 0) { snprintf(msg, sizeof msg, "stopped"); return; }
+    if (view != V_XREFS) xr_back = view;
+    xr_target = target; xr_total = n; nxr = n < MAXXR ? n : MAXXR; xr_sel = xr_top = 0;
+    view = V_XREFS;
+}
+
+static void show_funcs(void) {
+    if (need_funcs() < 0) return;
+    uint32_t a = view == V_XREFS && nxr ? xr[xr_sel].from : top + 2u * (uint32_t)cur;
+    int i = an_func_before(a);
+    fn_sel = i < 0 ? 0 : i;
+    if (view != V_FUNCS && view != V_XREFS) xr_back = view;
+    view = V_FUNCS;
+}
+
 /* ------------------------------------------------------------------ picker */
 
 static void draw_picker(void) {
@@ -421,7 +626,7 @@ static void draw_picker(void) {
         snprintf(t, sizeof t, "%-28s %8lu", files[k].name, (unsigned long)files[k].size);
         text(2, y, k == fsel ? C_KEY : C_TEXT, t);
     }
-    text(2, LIST_Y + (ROWS - 1) * ROW_H, C_DIM, "EXE open  F6 OS ROM  OPTN font  MENU quit");
+    text(2, LIST_Y + (ROWS - 1) * ROW_H, C_DIM, "EXE open  F6 ROM  OPTN font  VARS funcs  MENU quit");
     static const char *lab[6] = { 0, 0, 0, 0, 0, "ROM" };
     status_bar(lab);
 }
@@ -431,10 +636,13 @@ static void open_file(int k) {
     int rc = src_open_file(&S, &files[k]);
     if (rc < 0) { have_src = 0; snprintf(msg, sizeof msg, "open failed: BFile %d", rc); view = V_PICKER; return; }
     have_src = 1; nhist = 0; top = S.entry; cur = 0; nstrs = 0; view = V_LIST;
+    an_funcs_free();
+    if (S.size <= 256 * 1024) need_funcs();         /* small add-ins: find functions right away */
 }
 
 static void open_rom(void) {
     if (have_src) src_close(&S);
+    an_funcs_free();
     src_open_rom(&S);
     have_src = 1; nhist = 0; top = S.entry; cur = 0; nstrs = 0; view = V_LIST;
 }
@@ -480,6 +688,8 @@ static void redraw(void) {
     case V_HEX: draw_hex(); break;
     case V_STRINGS: draw_strings(); break;
     case V_HEADER: draw_header(); break;
+    case V_FUNCS: draw_funcs(); break;
+    case V_XREFS: draw_xrefs(); break;
     }
     dupdate();
 }
@@ -523,6 +733,10 @@ int main(void) {
             redraw();
             continue;
         }
+
+        /* functions / references, from any browsing view */
+        if (k == KEY_VARS) { show_funcs(); redraw(); continue; }
+        if (k == KEY_XOT) { show_xrefs(); redraw(); continue; }
 
         /* common: F-keys */
         int handled = 1;
@@ -578,6 +792,23 @@ int main(void) {
             }
         } else if (view == V_HEADER) {
             if (k == KEY_EXIT || k == KEY_EXE) view = V_LIST;
+        } else if (view == V_FUNCS || view == V_XREFS) {
+            int *sel = view == V_FUNCS ? &fn_sel : &xr_sel;
+            int n = view == V_FUNCS ? an_funcs_count() : nxr;
+            switch (k) {
+            case KEY_UP: if (*sel > 0) (*sel)--; break;
+            case KEY_DOWN: if (*sel < n - 1) (*sel)++; break;
+            case KEY_LEFT: *sel -= ROWS; if (*sel < 0) *sel = 0; break;
+            case KEY_RIGHT: *sel += ROWS; if (*sel >= n) *sel = n ? n - 1 : 0; break;
+            case KEY_EXE:
+                if (n) {
+                    uint32_t a = view == V_FUNCS ? an_func(fn_sel)->addr : xr[xr_sel].from;
+                    view = V_LIST; goto_addr(a, 1);
+                }
+                break;
+            case KEY_EXIT: view = (xr_back == V_FUNCS || xr_back == V_XREFS) ? V_LIST : xr_back; break;
+            default: break;
+            }
         }
         redraw();
     }
