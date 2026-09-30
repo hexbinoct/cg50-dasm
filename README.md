@@ -148,6 +148,6 @@ The output is `DASM.g3a`, which is committed. Helper scripts:
 ## Status and next steps
 
 The browser is verified on the real calculator and on the emulator, including reading every
-add-in's contents. Function detection and cross-references are verified on the emulator.
+add-in's contents, and so are function detection and cross-references.
 Next (see `NOTES.md`): bookmarks and comments saved to a side file (which could also cache the
 function table, so the OS ROM doesn't take 15 s each time), and an overview bar of the whole file.
