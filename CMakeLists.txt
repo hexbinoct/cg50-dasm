@@ -1,6 +1,5 @@
 # dasm — on-device SH-4A disassembler / binary browser (fx-CG50, gint).
-# Build inside the fxsdk:latest container (from PowerShell, Windows-style path):
-#   docker run --rm -v "<path-to-dasm>:/work" fxsdk:latest fxsdk build-cg
+# Build with the fxSDK and gint:  fxsdk build-cg
 cmake_minimum_required(VERSION 3.15)
 project(dasm C)
 

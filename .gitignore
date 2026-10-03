@@ -1,0 +1,11 @@
+# build outputs (DASM.g3a itself is committed)
+build-cg/
+build-host/
+__pycache__/
+*.pyc
+# downloaded font + previews (tools/make_font.py)
+.cache/
+# per-machine path to the emulator project (tools/emulator_path.py)
+tools/emulator_path.txt
+# never: calculator firmware or anything derived from it
+*.bin

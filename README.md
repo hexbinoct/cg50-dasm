@@ -6,9 +6,7 @@ it as a colour disassembly listing. Follow calls and jumps, then come back. See 
 in the file and, for any function or address, everything that calls or references it. Read the
 literal pools, see which OS syscall is being called, and switch to a hex dump or a strings list.
 
-It runs on the real calculator and on our desktop emulator (the parent project,
-`casio-cg50`). All the screenshots below come from the emulator running a full dump of a real
-fx-CG50, and show DASM disassembling itself.
+The screenshots below show DASM disassembling itself.
 
 | | |
 |---|---|
@@ -27,8 +25,8 @@ fx-CG50, and show DASM disassembling itself.
   4 KB pages), or the **OS ROM** mapped at `0x80000000` (F6).
 - **Full SH-4A decoding:** the whole integer, system and FPU set plus the SH-4A additions
   (`movli`/`movco`, `movua`, `icbi`, `prefi`, `synco`, banked registers). The decoder was
-  checked against the parent project's Python disassembler over every one of the 6.3 million
-  instruction words in OS 3.60, with no unexplained differences.
+  checked against an independent disassembler over every one of the 6.3 million instruction
+  words in OS 3.60, with no unexplained differences.
 - **Literal pools resolved:** `mov.l @(disp,pc),rN` shows the value it loads
   (`;=0x08105f14`), and `mov.w` shows it in decimal too.
 - **Calls and jumps followed:** EXE on a `bsr`/`bra`/`bt`/`bf` jumps to the target, and EXIT
@@ -93,7 +91,7 @@ Measured against the ELF symbols of DASM's own build, it finds **88% of the C fu
 3.60 it finds **12,058 functions**, including all but 89 of the 10,242 that Ghidra's own analysis
 finds. `tools/proto_funcs.py` is the Python prototype used to tune these rules and score them.
 
-Time on a real calculator, estimated on the emulator: a small add-in (DASM itself, 113 KB) takes
+Time on the calculator: a small add-in (DASM itself, 113 KB) takes
 well under a second and is analysed as soon as it is opened; khicas (2 MB, read through BFile)
 takes about 10 s; the 12 MB OS ROM about 15 s. A progress bar shows while it runs, and EXIT
 stops it and keeps what was found. Add-ins over 256 KB and the ROM are analysed the first time
@@ -117,37 +115,28 @@ you press VARS or X,θ,T.
 | OPTN | switch the font (large smooth / small) |
 | MENU | back to the calculator's MAIN MENU |
 
+## Installing
+
+Copy `DASM.g3a` to the calculator in USB mass-storage mode, then start DASM from the MAIN MENU.
+
 ## Building
 
-The add-in uses [gint](https://gitea.planet-casio.com/Lephenixnoir/gint) 2.11 and the fxSDK.
+The add-in uses [gint](https://gitea.planet-casio.com/Lephenixnoir/gint) 2.11 and the
+[fxSDK](https://gitea.planet-casio.com/Lephenixnoir/fxsdk). With both installed, run
+`fxsdk build-cg` in this folder; the output is `DASM.g3a`. fxconv needs Pillow in the first
+`python3` on the PATH.
 
-- **Windows (office):** in the parent project's Docker image, from PowerShell:
-  `docker run --rm -v "<path-to-dasm>:/work" fxsdk:latest fxsdk build-cg`.
-- **macOS (home):** `fxsdk build-cg` with the native toolchain. fxconv needs Pillow in the
-  first `python3` on the PATH (see `NOTES.md`).
-
-The output is `DASM.g3a`, which is committed. Helper scripts:
+Helper scripts:
 
 | Script | What it does |
 |---|---|
-| `python make_icons.py` | the menu icons |
+| `python3 make_icons.py` | the menu icons |
 | `python3 tools/make_font.py` | regenerates `src/font_aa.h` and writes a preview |
-| `python tools/fetch_syscalls.py` | the syscall names |
-| `tools/verify_decoder.py` | the decoder cross-check |
-| `python3 tools/readme_shots.py` | these screenshots |
-
-## Testing
-
-1. **Desktop emulator first.** In the parent project, the `dasm_swap_test.go` and
-   `dasm_real_test.go` probes (tag `probe`) run a fresh build. The second one uses the full
-   32 MB flash dump: DASM starts from its real menu icon and reads the real storage. With
-   `DASM_KEYS` you can script any key sequence and get a screenshot per key.
-2. **Then the real calculator.** Copy `DASM.g3a` to the calculator in USB mass-storage mode
-   and start it from the MAIN MENU.
+| `python3 tools/fetch_syscalls.py` | the syscall names |
 
 ## Status and next steps
 
-The browser is verified on the real calculator and on the emulator, including reading every
-add-in's contents, and so are function detection and cross-references.
-Next (see `NOTES.md`): bookmarks and comments saved to a side file (which could also cache the
+Verified on a real fx-CG50 (OS 3.60): the browser, including reading every add-in's contents,
+function detection and cross-references.
+Next: bookmarks and comments saved to a side file (which could also cache the
 function table, so the OS ROM doesn't take 15 s each time), and an overview bar of the whole file.

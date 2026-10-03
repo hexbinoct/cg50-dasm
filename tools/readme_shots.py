@@ -1,11 +1,12 @@
 """Regenerate the README screenshots (docs/img/*.png) on the desktop emulator.
 
-Runs the parent project's TestDasmReal probe: the full 32 MB flash dump resumed at the MAIN
+Runs the emulator project's TestDasmReal probe: the full 32 MB flash dump resumed at the MAIN
 MENU, DASM launched from its menu icon with this directory's DASM.g3a swapped in, then a key
-script; each shot is the add-in's whole 396x224 frame. DASM browses only our own add-in
-(DASM.g3a itself), so no Casio code is shown. Needs the parent repo next to this one
-(../casio-cg50 on the Mac, may/cg50 at the office) with os/flash_dump/flash_full_32mb.bin and
-cg50_state_32mb.bin.  Run:  python3 tools/readme_shots.py
+script; each shot is the add-in's whole 396x224 frame. DASM browses only its own code
+(DASM.g3a itself), so no Casio code is shown. Needs the emulator project (path in
+tools/emulator_path.txt, see emulator_path.py) with a 32 MB dump of your own calculator
+(os/flash_dump/flash_full_32mb.bin + cg50_state_32mb.bin there). The picker position in SCRIPT
+assumes that dump's file list.  Run:  python3 tools/readme_shots.py
 """
 import os
 import shutil
@@ -13,10 +14,11 @@ import subprocess
 import sys
 import tempfile
 
+from emulator_path import emulator_path
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 DASM = os.path.normpath(os.path.join(HERE, ".."))
 OUT = os.path.join(DASM, "docs", "img")
-PARENTS = [os.path.join(DASM, "..", "..", "casio-cg50"), os.path.join(DASM, "..", "..", "..", "may", "cg50")]
 
 # key = "row-col" (re/KEYMAP.md). The first DOWN is swallowed while DASM starts up.
 DOWN, UP, EXE, EXIT = "2-7", "3-7", "2-1", "3-7"
@@ -31,9 +33,7 @@ SCRIPT = [(DOWN, None)] * 20 + [(DOWN, "picker"), (EXE, None), (DOWN, "listing")
 
 
 def main():
-    parent = next((os.path.normpath(p) for p in PARENTS if os.path.isdir(os.path.join(p, "emu_go"))), None)
-    if not parent:
-        sys.exit("the emulator repository was not found")
+    parent = emulator_path()
     keys = ",".join(k for k, _ in SCRIPT)
     env = dict(os.environ, DASM_LAUNCH="1", DASM_SWAP=os.path.join(DASM, "DASM.g3a"), DASM_KEYS=keys)
     r = subprocess.run(["go", "-C", os.path.join(parent, "emu_go"), "test", "-tags", "probe",

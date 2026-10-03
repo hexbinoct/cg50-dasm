@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Differential test: the C decoder (tools/dectest.c) vs the reference re/sh4dis.py,
-instruction by instruction over a whole image.  Runs INSIDE the fxsdk container
-(host gcc + python3 there; nothing large is written to disk):
+"""Differential test: the C decoder (tools/dectest.c) vs the reference re/sh4dis.py of the
+emulator project (https://github.com/hexbinoct/casio-cg50), instruction by instruction over a
+whole image, e.g. the OS of your own calculator (os.bin from your dump; none is included).
+Needs gcc + python3. In the fxsdk container, with the emulator project mounted at /re:
 
-  docker run --rm -v "<dasm>:/work" -v "<parent>/re:/re:ro" -v "<parent>/os/flash_dump:/os:ro" \
+  docker run --rm -v "<dasm>:/work" -v "<emulator>/re:/re:ro" -v "<emulator>/os/flash_dump:/os:ro" \
       fxsdk:latest python3 /work/tools/verify_decoder.py [/os/os.bin 0x80000000 [start end]]
+
+or on the host, with the emulator path in tools/emulator_path.txt:
+  python3 tools/verify_decoder.py <os.bin> 0x80000000
 
 Normalisation (the two printers differ only in cosmetics):
   * immediates: sh4dis prints "#0x-10 ; -16" / "#0xff ; -1"; the C prints "#-16" / "#-1".
@@ -16,7 +20,14 @@ given by hand (see KNOWN_PY_BUGS: cases where the Python is wrong per the SH-4A 
 """
 import os, re, subprocess, sys, collections
 
-sys.path.insert(0, "/re")
+if os.path.isdir("/re"):           # in the container
+    sys.path.insert(0, "/re")
+    WORK = "/work"
+else:                              # on the host
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from emulator_path import emulator_path
+    sys.path.insert(0, os.path.join(emulator_path(), "re"))
+    WORK = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import sh4dis  # noqa: E402
 
 image = sys.argv[1] if len(sys.argv) > 1 else "/os/os.bin"
@@ -30,10 +41,10 @@ assert (base & 0x0FFFFFFF) == 0, "sh4dis assumes base & 0x0FFFFFFF == 0"
 sh4dis.set_image(data)
 
 # ---- build + run the C harness
-os.makedirs("/work/build-host", exist_ok=True)
-subprocess.check_call(["gcc", "-O2", "-Wall", "-Wextra", "-o", "/work/build-host/dectest",
-                       "/work/tools/dectest.c", "/work/src/sh4dec.c"])
-proc = subprocess.Popen(["/work/build-host/dectest", image, hex(base), hex(start), hex(end)],
+os.makedirs(f"{WORK}/build-host", exist_ok=True)
+subprocess.check_call(["gcc", "-O2", "-Wall", "-Wextra", "-o", f"{WORK}/build-host/dectest",
+                       f"{WORK}/tools/dectest.c", f"{WORK}/src/sh4dec.c"])
+proc = subprocess.Popen([f"{WORK}/build-host/dectest", image, hex(base), hex(start), hex(end)],
                         stdout=subprocess.PIPE, text=True, bufsize=1 << 20)
 
 IMM = re.compile(r"#(-?0x-?[0-9a-f]+|-?\d+)")

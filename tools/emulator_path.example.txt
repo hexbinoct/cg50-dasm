@@ -1,0 +1,4 @@
+# Path to your checkout of the fx-CG50 emulator project, https://github.com/hexbinoct/casio-cg50
+# (only some developer tools need it: see emulator_path.py). Copy this file to
+# emulator_path.txt and set the line below; a relative path is taken from the dasm folder.
+../../casio-cg50

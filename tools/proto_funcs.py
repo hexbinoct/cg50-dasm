@@ -21,11 +21,18 @@ import subprocess
 import sys
 
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', 'casio-cg50', 're'))
+from emulator_path import emulator_path
+
+# The emulator project's reference disassembler tells real instructions from invalid words
+# (tools/emulator_path.txt); without it every word counts as an instruction (less accurate).
+_emu = emulator_path(required=False)
 try:
-    import sh4dis                       # the parent project's disassembler: is it an instruction?
+    sys.path.insert(0, os.path.join(_emu or '', 're'))
+    import sh4dis
     def valid(op): return not sh4dis.decode(op, 0).startswith('.word')
 except Exception:
+    print("note: emulator project not set (tools/emulator_path.txt); every word counts as an instruction",
+          file=sys.stderr)
     def valid(op): return True
 
 
