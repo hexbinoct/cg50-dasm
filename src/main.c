@@ -10,6 +10,7 @@
 //                  F1-F6 = A-F) · F3 hex view · F4 strings from here · F5 header · F6 OS ROM · MENU quit
 //                  OPTN font: large smooth (anti-aliased 7x11, default) / small (5x7, more rows)
 //                  VARS function list (EXE go) · X,θ,T references to the function / target here
+//  Any view:       sin (ALPHA: D) debugger self-test: a UBC breakpoint in DASM's own code (debug.c)
 #include <gint/display.h>
 #include <gint/keyboard.h>
 #include <gint/gint.h>
@@ -22,6 +23,10 @@
 #include "names.h"
 #include "font_aa.h"
 #include "analysis.h"
+#include "ui.h"
+#include "debug.h"
+
+_Static_assert(UI_CW == AA_CW && UI_CH == AA_CH, "ui.h cell size != font_aa.h");
 
 extern font_t font_dasm;
 
@@ -40,24 +45,6 @@ static void apply_font(void) {
     ROWS = (STAT_Y - 1 - LIST_Y) / ROW_H;   /* small: (206-10)/8 = 24 */
 }
 
-#define C_BG     C_RGB(1, 2, 3)
-#define C_TITLE  C_RGB(4, 10, 18)
-#define C_ADDR   C_RGB(14, 30, 16)
-#define C_HEXW   C_RGB(10, 22, 12)
-#define C_TEXT   C_RGB(28, 56, 28)
-#define C_BR     C_RGB(31, 58, 10)
-#define C_CALL   C_RGB(31, 40, 6)
-#define C_RET    C_RGB(31, 24, 26)
-#define C_LIT    C_RGB(10, 52, 14)
-#define C_NAME   C_RGB(8, 54, 31)
-#define C_SLOT   C_RGB(16, 38, 31)
-#define C_CUR    C_RGB(3, 9, 16)
-#define C_DATA   C_RGB(18, 30, 18)
-#define C_STATUS C_RGB(3, 6, 10)
-#define C_KEY    C_RGB(31, 60, 31)
-#define C_DIM    C_RGB(12, 24, 12)
-#define C_ASCII  C_RGB(24, 48, 20)
-#define C_SEP    C_RGB(6, 14, 22)
 
 typedef enum { V_PICKER, V_LIST, V_HEX, V_STRINGS, V_HEADER, V_FUNCS, V_XREFS } view_t;
 
@@ -98,7 +85,7 @@ static inline uint16_t blend565(uint16_t dst, int src, int a) {
 }
 
 /* anti-aliased text at pixel (x, y), at most maxch characters, blended over what is drawn */
-static void aa_text(int x, int y, int color, const char *s, int maxch) {
+void aa_text(int x, int y, int color, const char *s, int maxch) {
     for (int i = 0; s[i] && i < maxch; i++, x += AA_CW) {
         int c = (unsigned char)s[i];
         if (c == ' ') continue;
@@ -721,6 +708,12 @@ int main(void) {
             if (cur >= ROWS) cur = ROWS - 1;
             if (view == V_HEX) top &= ~(uint32_t)(HEXB - 1);
             snprintf(msg, sizeof msg, "font: %s  (OPTN switches)", big ? "large, smooth" : "small");
+            redraw();
+            continue;
+        }
+
+        if (k == KEY_SIN) {    /* D(ebug): the debugger self-test (src/debug.c) */
+            dbg_selftest();
             redraw();
             continue;
         }

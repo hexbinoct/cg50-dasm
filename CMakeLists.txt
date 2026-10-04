@@ -1,7 +1,7 @@
 # dasm — on-device SH-4A disassembler / binary browser (fx-CG50, gint).
 # Build with the fxSDK and gint:  fxsdk build-cg
 cmake_minimum_required(VERSION 3.15)
-project(dasm C)
+project(dasm C ASM)
 
 include(GenerateG3A)
 include(Fxconv)
@@ -13,6 +13,8 @@ set(SOURCES
   src/source.c
   src/names.c
   src/analysis.c
+  src/debug.c
+  src/debug_dbh.S
 )
 set(ASSETS
   assets-cg/font5x7.png
