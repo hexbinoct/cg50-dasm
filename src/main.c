@@ -25,6 +25,7 @@
 #include "analysis.h"
 #include "ui.h"
 #include "debug.h"
+#include "monitor.h"
 
 _Static_assert(UI_CW == AA_CW && UI_CH == AA_CH, "ui.h cell size != font_aa.h");
 
@@ -613,8 +614,8 @@ static void draw_picker(void) {
         snprintf(t, sizeof t, "%-28s %8lu", files[k].name, (unsigned long)files[k].size);
         text(2, y, k == fsel ? C_KEY : C_TEXT, t);
     }
-    text(2, LIST_Y + (ROWS - 1) * ROW_H, C_DIM, "EXE open  F6 ROM  OPTN font  VARS funcs  MENU quit");
-    static const char *lab[6] = { 0, 0, 0, 0, 0, "ROM" };
+    text(2, LIST_Y + (ROWS - 1) * ROW_H, C_DIM, "EXE open  F2 debug  F6 ROM  OPTN font  MENU quit");
+    static const char *lab[6] = { 0, "DEBUG", 0, 0, 0, "ROM" };
     status_bar(lab);
 }
 
@@ -723,6 +724,7 @@ int main(void) {
             else if (k == KEY_DOWN && fsel < nfiles - 1) fsel++;
             else if (k == KEY_EXE && nfiles > 0) open_file(fsel);
             else if (k == KEY_F6) open_rom();
+            else if (k == KEY_F2) mon_debug_next(msg, sizeof msg);  /* debug the next add-in (src/monitor.c) */
             redraw();
             continue;
         }
