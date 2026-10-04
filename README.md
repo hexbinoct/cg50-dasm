@@ -5,8 +5,13 @@ Pick any add-in (`.g3a`) in storage memory, or the calculator's OS ROM itself, a
 it as a colour disassembly listing. Follow calls and jumps, then come back. See every function
 in the file and, for any function or address, everything that calls or references it. Read the
 literal pools, see which OS syscall is being called, and switch to a hex dump or a strings list.
+It also has a **debugger**: start any add-in under it and it stops at its first instruction, so
+you can step through it, set a breakpoint and read the CPU registers.
 
-The screenshots below show DASM disassembling itself.
+DASM was developed and tested largely on the [casio-cg50](https://github.com/hexbinoct/casio-cg50)
+fx-CG50 emulator, which runs the calculator's own OS. Every screen below is a screenshot from it.
+DASM is disassembling itself in all of them except the debugger, which is stopped inside a small
+test add-in of ours.
 
 | | |
 |---|---|
@@ -16,8 +21,10 @@ The screenshots below show DASM disassembling itself.
 | **Functions (VARS):** every function found, with its size | **References (X,θ,T):** everything that calls this function, and from where |
 | ![A function in the listing](docs/img/function.png) | ![Hex view](docs/img/hex.png) |
 | **Function starts** are marked by a line and their name, and literal pools show as data | **Hex view (F3):** synced to the listing, with ASCII |
-| ![Header pane](docs/img/header.png) | |
-| **Header (F5):** name, version, sizes, checksum, the add-in's icon | |
+| ![Header pane](docs/img/header.png) | ![Light theme](docs/img/listing-light.png) |
+| **Header (F5):** name, version, sizes, checksum, the add-in's icon | **Light theme (S⇔D):** easier to read on the calculator's own screen |
+| ![The debugger, stopped](docs/img/debugger.png) | ![Starting the debugger](docs/img/debugger-arm.png) |
+| **Debugger:** registers (changed ones in yellow), flags, and the code with PC marked | **F2 in the file picker** arms the debugger for the next add-in you open |
 
 ## What it can do
 
@@ -49,6 +56,8 @@ The screenshots below show DASM disassembling itself.
 - **Readable colours:** calls, branches, returns and literals have their own colours, and delay
   slots are indented.
 - **Hex view (F3), strings (F4), header (F5), go to address (F2).**
+- **Debugger (F2 in the file picker):** stops the next add-in you open at its first instruction;
+  then single step, step over calls, one breakpoint, continue. Described below.
 - **Font setting (OPTN):** switches the listing font, described below.
 - **Light or dark theme (S⇔D):** the dark theme is the default; the light one is easier to read
   on the calculator's own screen. DASM remembers the choice, and the debugger uses it too.
@@ -99,6 +108,39 @@ takes about 10 s; the 12 MB OS ROM about 15 s. A progress bar shows while it run
 stops it and keeps what was found. Add-ins over 256 KB and the ROM are analysed the first time
 you press VARS or X,θ,T.
 
+## Debugger
+
+The debugger uses the CPU's own breakpoint hardware (the SH7305's User Break Controller), so the
+program being debugged is not modified.
+
+1. In DASM's file picker, press **F2**. DASM copies a small resident *monitor* (about 25 KB) into
+   a part of RAM that neither the OS nor add-ins use (`0x8C4E0000`–`0x8C7FFFFF`, checked on a
+   real calculator), and explains the keys.
+2. Press **EXE**. DASM sets a breakpoint on `0x00300000`, where every add-in starts, and opens the
+   MAIN MENU.
+3. Open any add-in. It stops at its first instruction, and the monitor shows the registers, the
+   status flags and the code around PC.
+
+| Key | On a stop |
+|---|---|
+| F1 | single step (one instruction; a branch together with its delay slot) |
+| F2 | step over a call (`bsr`/`jsr`/`bsrf`): run it and stop after its delay slot |
+| UP / DOWN, LEFT / RIGHT | move the cursor / a page through the code |
+| F3 | set the breakpoint at the cursor (F3 on it again removes it) |
+| EXE | continue until the breakpoint |
+| EXIT | detach: the add-in runs on normally |
+| S⇔D | switch the theme |
+
+Going back to DASM from the MAIN MENU, instead of opening another add-in, disarms the debugger.
+
+Limits, for now: one breakpoint (the controller has two channels, and stepping needs the other),
+and the add-in's timers and interrupts are paused while it is stopped. Verified on a real fx-CG50
+with OS 3.60. If the calculator ever freezes, the RESTART button on its back recovers it without
+losing anything.
+
+The **sin** key runs the debugger's self-test: a breakpoint in DASM's own code, with the registers
+and single steps.
+
 ## Keys
 
 | Key | In the listing |
@@ -118,28 +160,113 @@ you press VARS or X,θ,T.
 | S⇔D | switch the theme (dark / light) |
 | MENU | back to the calculator's MAIN MENU |
 
+In the file picker: EXE opens the file, F2 starts the debugger, F6 opens the OS ROM.
+
 ## Installing
 
-Copy `DASM.g3a` to the calculator in USB mass-storage mode, then start DASM from the MAIN MENU.
+1. Connect the calculator by USB and choose **USB Flash** (F1) on the calculator's screen.
+2. Copy `DASM.g3a` to the calculator's drive (the top folder).
+3. Eject the drive, then start DASM from the MAIN MENU.
+
+On macOS, copy it with `cp -X DASM.g3a "/Volumes/<drive>/"`. A copy from Finder can add a hidden
+`._DASM.g3a` file next to it. Delete that file: it would show up in the MAIN MENU and in DASM's
+file picker.
 
 ## Building
 
-The add-in uses [gint](https://gitea.planet-casio.com/Lephenixnoir/gint) 2.11 and the
-[fxSDK](https://gitea.planet-casio.com/Lephenixnoir/fxsdk). With both installed, run
-`fxsdk build-cg` in this folder; the output is `DASM.g3a`. fxconv needs Pillow in the first
-`python3` on the PATH.
+`DASM.g3a` is in the repository, ready to copy. You only need to build it if you change the code.
 
-Helper scripts:
+DASM is a [gint](https://git.planet-casio.com/Lephenixnoir/gint) add-in (gint 2.11 or newer), built
+with the [fxSDK](https://git.planet-casio.com/Lephenixnoir/fxsdk). Both are installed with
+GiteaPC, Planète Casio's package tool, which builds a SuperH cross-compiler (`sh-elf-gcc`) from
+source. Allow 30–60 minutes for that the first time.
+
+**1. Prerequisites.** Linux, or Windows with WSL (Ubuntu). On Debian/Ubuntu:
+
+```sh
+sudo apt install curl git python3 python3-pil build-essential cmake pkg-config flex texinfo \
+    libmpfr-dev libmpc-dev libgmp-dev libpng-dev libppl-dev libusb-1.0-0-dev libudisks2-dev libglib2.0-dev
+```
+
+**2. GiteaPC, the fxSDK, the compiler and gint:**
+
+```sh
+curl "https://git.planet-casio.com/Lephenixnoir/GiteaPC/raw/branch/master/install.sh" -o /tmp/giteapc-install.sh
+bash /tmp/giteapc-install.sh
+giteapc install Lephenixnoir/fxsdk Lephenixnoir/sh-elf-binutils Lephenixnoir/sh-elf-gcc
+giteapc install Lephenixnoir/OpenLibm Vhex-Kernel-Core/fxlibc Lephenixnoir/gint
+```
+
+The tools go into `~/.local/bin`, which must be on your `PATH`; the installer offers to add it.
+The fxSDK's own README covers other systems and the problems people hit.
+
+**3. Build DASM:**
+
+```sh
+git clone https://github.com/hexbinoct/cg50-dasm.git
+cd cg50-dasm
+fxsdk build-cg
+```
+
+The result is `DASM.g3a` in that folder. The build also compiles the debugger's monitor
+(`monitor/`) into `monitor.bin` and embeds it in the add-in. If a build was configured on another
+machine, delete `build-cg/` and run `fxsdk build-cg` again.
+
+**macOS** works with a few extra steps, because the macOS defaults trip up the toolchain build:
+- install the build dependencies with Homebrew (`python3 cmake libusb libpng pkg-config gmp mpfr
+  libmpc texinfo bash gnu-getopt`), and put Homebrew's `bash` and `gnu-getopt` before the system
+  ones on your `PATH` (the fxSDK scripts need bash 4 and GNU `getopt`);
+- build on a case-sensitive volume, because GCC and binutils fail on the default case-insensitive
+  disk. An APFS volume in the same container costs no fixed space:
+  `diskutil apfs addVolume disk3 "Case-sensitive APFS" fxsdkbuild`, then set
+  `GITEAPC_HOME=/Volumes/fxsdkbuild/giteapc-repos` before the `giteapc` commands;
+- the first `python3` on your `PATH` must have Pillow (`python3 -m pip install pillow`), because
+  the fxSDK's asset converter needs it for DASM's font.
+- with Xcode's clang 21 (2026), three more fixes were needed: `--with-system-zlib` added to the
+  configure flags in `sh-elf-binutils/configure.sh` and `sh-elf-gcc/configure.sh`, and a
+  `giteapc-config.make` in the fxsdk repository containing
+  `FXSDK_CONFIGURE := -DFXLINK_DISABLE_UDISKS2=1` (UDisks2 exists only on Linux).
+
+## Helper scripts
+
+None of these is needed to build DASM.
 
 | Script | What it does |
 |---|---|
-| `python3 make_icons.py` | the menu icons |
-| `python3 tools/make_font.py` | regenerates `src/font_aa.h` and writes a preview |
-| `python3 tools/fetch_syscalls.py` | the syscall names |
+| `python3 make_icons.py` | draws the menu icons (`assets-cg/icon-*.png`) |
+| `python3 tools/make_font.py` | regenerates the large font, `src/font_aa.h`, from DejaVu Sans Mono |
+| `python3 tools/fetch_syscalls.py` | regenerates the syscall names, `src/syscall_names.h`, from libfxcg |
+| `python3 tools/readme_shots.py` | retakes the README screenshots on the emulator |
+| `python3 tools/verify_decoder.py` | compares DASM's decoder with the emulator's disassembler |
+| `python3 tools/proto_funcs.py` | the function-detection prototype and its score |
+
+The last three need the [casio-cg50](https://github.com/hexbinoct/casio-cg50) emulator: put the
+path of your checkout in `tools/emulator_path.txt` (see `tools/emulator_path.example.txt`). Anything
+that runs the calculator's OS needs a flash dump of your own calculator, set up as the emulator's
+README describes. Neither repository contains any Casio firmware.
 
 ## Status and next steps
 
 Verified on a real fx-CG50 (OS 3.60): the browser, including reading every add-in's contents,
-function detection and cross-references.
-Next: bookmarks and comments saved to a side file (which could also cache the
-function table, so the OS ROM doesn't take 15 s each time), and an overview bar of the whole file.
+function detection, cross-references, both themes and the debugger.
+
+Next:
+- **Debugger:** unlimited breakpoints (by running the add-in's code from a copy in RAM),
+  watchpoints on memory, and DASM's full listing on a stop.
+- **Browser:** bookmarks and comments saved to a side file (which could also cache the function
+  table, so the OS ROM doesn't take 15 s each time), and an overview bar of the whole file.
+
+## Credits
+
+- [casio-cg50](https://github.com/hexbinoct/casio-cg50), the fx-CG50 emulator that DASM was
+  developed and tested on: the add-in, its debugger and the decoder were all run there first.
+- [gint](https://git.planet-casio.com/Lephenixnoir/gint) and the
+  [fxSDK](https://git.planet-casio.com/Lephenixnoir/fxsdk) by Lephenixnoir: the kernel DASM runs
+  on, and its build tools.
+- [libfxcg](https://github.com/Jonimoose/libfxcg): the syscall names.
+- [DejaVu Sans Mono](https://dejavu-fonts.github.io/): the large font (Bitstream Vera licence and
+  public domain).
+
+## Licence
+
+MIT: see [LICENSE](LICENSE).

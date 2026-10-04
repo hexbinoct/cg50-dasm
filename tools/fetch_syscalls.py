@@ -64,11 +64,11 @@ def main():
     else:
         names = collect()
         json.dump({str(k): v for k, v in sorted(names.items())}, open(CACHE, "w"), indent=1)
-    # A few numbers libfxcg lacks / we verified ourselves (parent re/syscall.py)
+    # A few numbers libfxcg lacks / we verified ourselves (the casio-cg50 emulator's re/syscall.py)
     extra = {0x025F: "Bdisp_PutDisp_DD", 0x0260: "Bdisp_PutDisp_DD_stripe", 0x0270: "Bdisp_SetPoint_VRAM",
              0x0272: "Bdisp_AllClr_VRAM", 0x0921: "Bdisp_PutDispArea_DD", 0x090F: "GetKey",
              0x0EAB: "PutKeyCode", 0x1E50: "memset", 0x1163: "malloc", 0x0E6B: "RTC_GetTicks"}
-    # libfxcg is the authority; add a parent-project extra only when it contradicts nothing
+    # libfxcg is the authority; add one of these extras only when it contradicts nothing
     # (neither its number nor its name is already listed).
     have_names = set(names.values())
     for k, v in extra.items():

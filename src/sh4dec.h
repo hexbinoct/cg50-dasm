@@ -1,5 +1,6 @@
-/* sh4dec — SH-4 / SH-4A instruction decoder (big-endian), C port of the parent
- * project's re/sh4dis.py with the full FPU set and the SH-4A extensions added.
+/* sh4dec — SH-4 / SH-4A instruction decoder (big-endian), C port of re/sh4dis.py in the
+ * casio-cg50 emulator (github.com/hexbinoct/casio-cg50), with the full FPU set and the SH-4A
+ * extensions added.
  * Pure: no globals, no allocation; memory is reached through a read callback so
  * the same code serves the on-device viewer and the host verification harness. */
 #ifndef SH4DEC_H
