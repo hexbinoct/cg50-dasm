@@ -22,6 +22,7 @@
  * (both channels off, the target runs on). */
 #include <stdint.h>
 #include "mon_abi.h"
+#include "theme.h"
 #include "../src/sh4dec.h"
 #include "../src/font_aa.h"
 
@@ -183,23 +184,24 @@ static int rd(void *ctx, uint32_t a, int size, uint32_t *out) {
 
 static uint16_t fb[W * H];
 
-#define C_RGB(r,g,b) (((r) << 11) | ((g) << 6) | (b))      /* as gint (DASM's colours) */
-#define C_BG     C_RGB(1, 2, 3)
-#define C_TITLE  C_RGB(4, 10, 18)
-#define C_ADDR   C_RGB(14, 30, 16)
-#define C_HEXW   C_RGB(10, 22, 12)
-#define C_TEXT   C_RGB(28, 56, 28)
-#define C_BR     C_RGB(31, 58, 10)
-#define C_CALL   C_RGB(31, 40, 6)
-#define C_RET    C_RGB(31, 24, 26)
-#define C_LIT    C_RGB(10, 52, 14)
-#define C_SLOT   C_RGB(16, 38, 31)
-#define C_CUR    C_RGB(3, 9, 16)
-#define C_PCBAR  C_RGB(8, 14, 2)
-#define C_STATUS C_RGB(3, 6, 10)
-#define C_KEY    C_RGB(31, 60, 31)
-#define C_DIM    C_RGB(12, 24, 12)
-#define C_SEP    C_RGB(6, 14, 22)
+/* DASM's colours, the current theme of theme.h (S<->D switches; mon_main loads it per stop) */
+static const uint16_t *pal = theme_pal[0];
+#define C_BG      pal[P_BG]
+#define C_TITLE   pal[P_TITLE]
+#define C_ADDR    pal[P_ADDR]
+#define C_HEXW    pal[P_HEXW]
+#define C_TEXT    pal[P_TEXT]
+#define C_BR      pal[P_BR]
+#define C_CALL    pal[P_CALL]
+#define C_RET     pal[P_RET]
+#define C_LIT     pal[P_LIT]
+#define C_SLOT    pal[P_SLOT]
+#define C_CUR     pal[P_CUR]
+#define C_PCBAR   pal[P_PCBAR]
+#define C_STATUS  pal[P_STATUS]
+#define C_KEY     pal[P_KEY]
+#define C_DIM     pal[P_DIM]
+#define C_SEP     pal[P_SEP]
 
 static void fill(int x0, int y0, int x1, int y1, uint16_t c) {
     if (x0 < 0) x0 = 0;
@@ -316,7 +318,7 @@ static void lcd_push(void) {
 enum {
     K_F1 = K(6, 9), K_F2 = K(5, 9), K_F3 = K(4, 9),
     K_UP = K(1, 8), K_DOWN = K(2, 7), K_LEFT = K(2, 8), K_RIGHT = K(1, 7),
-    K_EXE = K(2, 1), K_EXIT = K(3, 7),
+    K_EXE = K(2, 1), K_EXIT = K(3, 7), K_FD = K(5, 5),    /* K_FD: S<->D */
 };
 
 static struct { uint16_t ctrl, r0e, mode, ie, r16, r18, r1a, r1c; uint8_t pfc; } KS;
@@ -589,6 +591,7 @@ void mon_main(void) {
 
     lcd_begin();
     kbd_begin();
+    pal = theme_pal[theme_get()];
     top = pc - 6;
     cur = pc;
     int held = key_now() >= 0;                      /* a key held at the stop (EXE that launched) */
@@ -627,6 +630,11 @@ void mon_main(void) {
             break;
         }
         else if (k == K_EXIT) { S.bp_on = 0; break; }
+        else if (k == K_FD) {
+            int light = pal == theme_pal[0];
+            pal = theme_pal[light];
+            theme_put(light);
+        }
         draw(why);
         lcd_push();
     }

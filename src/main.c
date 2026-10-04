@@ -9,6 +9,7 @@
 //                  EXE follow branch / literal · EXIT back (history) · F1 open · F2 goto (hex: digits,
 //                  F1-F6 = A-F) · F3 hex view · F4 strings from here · F5 header · F6 OS ROM · MENU quit
 //                  OPTN font: large smooth (anti-aliased 7x11, default) / small (5x7, more rows)
+//                  S<->D theme: dark / light (the real LCD shows text better on light; remembered)
 //                  VARS function list (EXE go) · X,θ,T references to the function / target here
 //  Any view:       sin (ALPHA: D) debugger self-test: a UBC breakpoint in DASM's own code (debug.c)
 #include <gint/display.h>
@@ -35,6 +36,16 @@ extern font_t font_dasm;
  * large = anti-aliased DejaVu Sans Mono in 7x11 cells (src/font_aa.h): 56 cols x 17 rows;
  * small = the 1-bit 5x7 gint font in 6x8 cells: 64 cols x 24 rows. */
 static int big = 1;
+
+const uint16_t *ui_pal = theme_pal[0];
+
+int ui_theme_toggle(void) {
+    int light = ui_pal == theme_pal[0];
+    ui_pal = theme_pal[light];
+    theme_put(light);
+    return light;
+}
+
 static int CW, COLS, ROW_H, TITLE_H, LIST_Y, ROWS, STAT_Y;
 static int HEXB;            /* bytes per hex-view row: 16 small, 8 large */
 
@@ -127,7 +138,7 @@ static void status_bar(const char *labels[6]) {
     for (int i = 0; i < 6; i++) {
         if (!labels[i]) continue;
         int x0 = i * 64;
-        drect(x0 + 1, STAT_Y, x0 + 62, DHEIGHT - 1, C_RGB(6, 14, 24));
+        drect(x0 + 1, STAT_Y, x0 + 62, DHEIGHT - 1, C_FKEY);
         int n = (int)strlen(labels[i]);
         ptext(x0 + 32 - n * CW / 2, STAT_Y + 1, C_KEY, labels[i], n);
     }
@@ -614,7 +625,7 @@ static void draw_picker(void) {
         snprintf(t, sizeof t, "%-28s %8lu", files[k].name, (unsigned long)files[k].size);
         text(2, y, k == fsel ? C_KEY : C_TEXT, t);
     }
-    text(2, LIST_Y + (ROWS - 1) * ROW_H, C_DIM, "EXE open  F2 debug  F6 ROM  OPTN font  MENU quit");
+    text(2, LIST_Y + (ROWS - 1) * ROW_H, C_DIM, "EXE open  F2 debug  F6 ROM  OPTN font  S<>D theme");
     static const char *lab[6] = { 0, "DEBUG", 0, 0, 0, "ROM" };
     status_bar(lab);
 }
@@ -692,6 +703,7 @@ static void scroll_rows(int delta_rows, int step) {
 
 int main(void) {
     dfont(&font_dasm);
+    ui_pal = theme_pal[theme_get()];
     apply_font();
     names_init();
     nfiles = src_scan_g3a(files, 64);
@@ -709,6 +721,12 @@ int main(void) {
             if (cur >= ROWS) cur = ROWS - 1;
             if (view == V_HEX) top &= ~(uint32_t)(HEXB - 1);
             snprintf(msg, sizeof msg, "font: %s  (OPTN switches)", big ? "large, smooth" : "small");
+            redraw();
+            continue;
+        }
+
+        if (k == KEY_FD) {     /* theme: dark <-> light */
+            snprintf(msg, sizeof msg, "theme: %s  (S<>D switches)", ui_theme_toggle() ? "light" : "dark");
             redraw();
             continue;
         }

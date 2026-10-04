@@ -36,7 +36,7 @@ add_custom_command(
     -T ${MON_DIR}/mon.ld -Wl,--no-warn-rwx-segments -Wl,-Map=monitor.map -o monitor.elf
     ${MON_DIR}/entry.S ${MON_DIR}/mon.c ${CMAKE_CURRENT_SOURCE_DIR}/src/sh4dec.c -lgcc
   COMMAND ${SH_OBJCOPY} -O binary monitor.elf ${MON_BIN}
-  DEPENDS ${MON_DIR}/entry.S ${MON_DIR}/mon.c ${MON_DIR}/mon.ld ${MON_DIR}/mon_abi.h
+  DEPENDS ${MON_DIR}/entry.S ${MON_DIR}/mon.c ${MON_DIR}/mon.ld ${MON_DIR}/mon_abi.h ${MON_DIR}/theme.h
     src/sh4dec.c src/sh4dec.h src/font_aa.h
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   COMMENT "Building the resident debugger monitor (monitor.bin)"

@@ -2,25 +2,29 @@
 #ifndef UI_H
 #define UI_H
 #include <gint/display.h>
+#include "../monitor/theme.h"
 
-#define C_BG     C_RGB(1, 2, 3)
-#define C_TITLE  C_RGB(4, 10, 18)
-#define C_ADDR   C_RGB(14, 30, 16)
-#define C_HEXW   C_RGB(10, 22, 12)
-#define C_TEXT   C_RGB(28, 56, 28)
-#define C_BR     C_RGB(31, 58, 10)
-#define C_CALL   C_RGB(31, 40, 6)
-#define C_RET    C_RGB(31, 24, 26)
-#define C_LIT    C_RGB(10, 52, 14)
-#define C_NAME   C_RGB(8, 54, 31)
-#define C_SLOT   C_RGB(16, 38, 31)
-#define C_CUR    C_RGB(3, 9, 16)
-#define C_DATA   C_RGB(18, 30, 18)
-#define C_STATUS C_RGB(3, 6, 10)
-#define C_KEY    C_RGB(31, 60, 31)
-#define C_DIM    C_RGB(12, 24, 12)
-#define C_ASCII  C_RGB(24, 48, 20)
-#define C_SEP    C_RGB(6, 14, 22)
+/* The colours of the current theme (S<->D switches; ../monitor/theme.h has both palettes). */
+extern const uint16_t *ui_pal;
+#define C_BG      ((int)ui_pal[P_BG])
+#define C_TITLE   ((int)ui_pal[P_TITLE])
+#define C_ADDR    ((int)ui_pal[P_ADDR])
+#define C_HEXW    ((int)ui_pal[P_HEXW])
+#define C_TEXT    ((int)ui_pal[P_TEXT])
+#define C_BR      ((int)ui_pal[P_BR])
+#define C_CALL    ((int)ui_pal[P_CALL])
+#define C_RET     ((int)ui_pal[P_RET])
+#define C_LIT     ((int)ui_pal[P_LIT])
+#define C_NAME    ((int)ui_pal[P_NAME])
+#define C_SLOT    ((int)ui_pal[P_SLOT])
+#define C_CUR     ((int)ui_pal[P_CUR])
+#define C_DATA    ((int)ui_pal[P_DATA])
+#define C_STATUS  ((int)ui_pal[P_STATUS])
+#define C_FKEY    ((int)ui_pal[P_FKEY])
+#define C_KEY     ((int)ui_pal[P_KEY])
+#define C_DIM     ((int)ui_pal[P_DIM])
+#define C_ASCII   ((int)ui_pal[P_ASCII])
+#define C_SEP     ((int)ui_pal[P_SEP])
 
 /* The large anti-aliased font's cell (src/font_aa.h, AA_CW x AA_CH). */
 #define UI_CW 7
@@ -29,5 +33,9 @@
 /* Anti-aliased text at pixel (x, y), at most maxch characters, blended over what is drawn
  * (main.c). */
 void aa_text(int x, int y, int color, const char *s, int maxch);
+
+/* Switch between the dark and the light theme and remember the choice; returns 1 for light
+ * (main.c). */
+int ui_theme_toggle(void);
 
 #endif

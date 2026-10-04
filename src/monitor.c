@@ -26,7 +26,7 @@ static const char *install(void) {
     const mon_header_t *h = hdr();
     uint32_t size = (uint32_t)(mon_blob_end - mon_blob);
     if (h->magic != MON_MAGIC || h->version != MON_VERSION) return "bad monitor header";
-    if (size < sizeof *h || MON_BASE + size > h->image_end || h->image_end > h->bss_end || h->bss_end > MON_LIMIT
+    if (size < sizeof *h || MON_BASE + size > h->image_end || h->image_end > h->bss_end || h->bss_end > (MON_THEME & ~0x20000000u)
         || h->entry < MON_BASE || h->entry >= MON_BASE + size)
         return "monitor sizes don't fit 0x8C4E0000-0x8C7FFFFF";
     memcpy((void *)MON_BASE, mon_blob, size);
@@ -112,6 +112,7 @@ void mon_debug_next(char *msg, int cap) {
     y = line(y, C_LIT, "On a stop:  F1 step       F2 step over a call");
     y = line(y, C_LIT, "            F3 breakpoint at the cursor (UP/DOWN)");
     y = line(y, C_LIT, "            EXE continue  EXIT detach (runs on)");
+    y = line(y, C_LIT, "            S<>D light / dark theme");
     y += 4;
     y = line(y, C_DIM, "Coming back to DASM instead disarms the debugger.");
     snprintf(t, sizeof t, "UBC break entry 0x%08lx", (unsigned long)h->entry);

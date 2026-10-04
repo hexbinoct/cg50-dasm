@@ -262,7 +262,7 @@ static void draw_regs(const gdb_cpu_state_t *s, int why) {
 
     /* keys */
     drect(0, STAT_Y - 1, DWIDTH - 1, DHEIGHT - 1, C_STATUS);
-    drect(1, STAT_Y, 62, DHEIGHT - 1, C_RGB(6, 14, 24));
+    drect(1, STAT_Y, 62, DHEIGHT - 1, C_FKEY);
     aa_text(32 - 2 * UI_CW, STAT_Y + 1, C_KEY, "STEP", 4);
     txt(10, STAT_Y + 1, C_DIM, "EXE continue   EXIT clear breaks, run on");
     dupdate();

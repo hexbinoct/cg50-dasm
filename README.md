@@ -50,6 +50,8 @@ The screenshots below show DASM disassembling itself.
   slots are indented.
 - **Hex view (F3), strings (F4), header (F5), go to address (F2).**
 - **Font setting (OPTN):** switches the listing font, described below.
+- **Light or dark theme (S⇔D):** the dark theme is the default; the light one is easier to read
+  on the calculator's own screen. DASM remembers the choice, and the debugger uses it too.
 
 ## Font setting: OPTN
 
@@ -113,6 +115,7 @@ you press VARS or X,θ,T.
 | VARS | function list (EXE goes to the function, EXIT comes back) |
 | X,θ,T | references to the function on the cursor line, or to this instruction's target |
 | OPTN | switch the font (large smooth / small) |
+| S⇔D | switch the theme (dark / light) |
 | MENU | back to the calculator's MAIN MENU |
 
 ## Installing
