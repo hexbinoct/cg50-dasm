@@ -1,7 +1,9 @@
 /* Host harness for the decoder: disassemble a range of an image file and print
  * "addr: word   text[    ; =0xLITERAL]" in the exact layout of re/sh4dis.py so
  * tools/verify_decoder.py can diff the two.  Built with the host gcc (Docker).
- *   dectest <image> <base_vaddr> <start> <end>       (hex accepted with 0x) */
+ *   dectest <image> <base_vaddr> <start> <end> [len]  (hex accepted with 0x)
+ * With "len", step by the instruction length (a 32-bit DSP instruction is one line, its words
+ * printed as "f800 b100") instead of by 2 as sh4dis does (tools/verify_dsp.py uses it). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,13 +27,17 @@ int main(int argc, char **argv) {
     img = malloc(img_len); if (fread(img, 1, img_len, f) != img_len) return 1; fclose(f);
     base = (uint32_t)strtoul(argv[2], 0, 0);
     uint32_t start = (uint32_t)strtoul(argv[3], 0, 0), end = (uint32_t)strtoul(argv[4], 0, 0);
+    int by_len = argc > 5 && !strcmp(argv[5], "len");
     char text[96]; sh4_insn_t in;
     static char line[160];
-    for (uint32_t pc = start; pc < end; pc += 2) {
-        uint32_t op;
+    for (uint32_t pc = start; pc < end; pc += by_len ? in.len : 2) {
+        uint32_t op, op2;
         if (!rd(0, pc, 2, &op)) break;
         sh4_decode((uint16_t)op, pc, rd, 0, &in, text, sizeof text);
-        int n = snprintf(line, sizeof line, "%08x: %04x   %s", pc, op, text);
+        int n;
+        if (by_len && in.len == 4 && rd(0, pc + 2, 2, &op2))
+            n = snprintf(line, sizeof line, "%08x: %04x %04x   %s", pc, op, op2, text);
+        else n = snprintf(line, sizeof line, "%08x: %04x   %s", pc, op, text);
         if (in.kind == SH4_K_LITERAL) {
             if (in.lit_ok) snprintf(line + n, sizeof line - n, "    ; =0x%0*x", in.lit_size * 2, in.lit_val);
             else snprintf(line + n, sizeof line - n, "    ; =0x?");

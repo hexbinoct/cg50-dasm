@@ -34,6 +34,11 @@ static int rd32(uint32_t a, uint32_t *v) {
     const uint8_t *q = win(a); if (!q) return 0;
     *v = (uint32_t)q[0] << 24 | (uint32_t)q[1] << 16 | (uint32_t)q[2] << 8 | q[3]; return 1;
 }
+/* sh4_decode's read callback (a 32-bit DSP instruction's second word) */
+static int dec_rd(void *ctx, uint32_t a, int size, uint32_t *v) {
+    (void)ctx;
+    return size == 2 ? rd16(a, v) : rd32(a, v);
+}
 static inline int in_code(uint32_t a) { return a >= lo && a < hi_end && !(a & 1); }
 static inline int32_t s8(uint32_t x) { return (int8_t)x; }
 static inline int32_t s12(uint32_t x) { return (x & 0x800) ? (int32_t)x - 0x1000 : (int32_t)x; }
@@ -168,8 +173,16 @@ static int explore(uint32_t start, uint32_t *code_end, uint32_t *pool_end, int c
             if (!rd16(a, &op) || op == 0xFFFF || op == 0x0000) { clean = 0; break; }
             if (!collect) {                              /* checking a candidate: real opcodes only */
                 char txt[8];
-                sh4_decode((uint16_t)op, a, 0, 0, 0, txt, sizeof txt);
+                sh4_decode((uint16_t)op, a, dec_rd, 0, 0, txt, sizeof txt);
                 if (txt[0] == '.') { clean = 0; break; }
+            }
+            if (sh4_insn_len((uint16_t)op) == 4) {               /* 32-bit DSP instruction */
+                uint32_t o2 = off + 1;
+                if (o2 < 0x8000) { vis[o2 >> 3] |= (uint8_t)(1u << (o2 & 7)); if (o2 > maxoff) maxoff = o2; }
+                if (a + 4 > hi) hi = a + 4;
+                P.mask &= 0xFF00;                                 /* its transfers move r0-r7 */
+                a += 4;
+                continue;
             }
             if (a + 2 > hi) hi = a + 2;
             int n = (op >> 8) & 15, m = (op >> 4) & 15, h = op >> 12;
@@ -233,6 +246,7 @@ static int explore(uint32_t start, uint32_t *code_end, uint32_t *pool_end, int c
                 (h == 4 && (op & 0xFF) != 0x0B && (op & 0xFF) != 0x2B && (op & 0xFF) != 0x22 &&
                  (op & 0xFF) != 0x12 && (op & 0xFF) != 0x02 && (op & 0xFF) != 0x13))
                 P.mask &= (uint16_t)~(1u << n);
+            if (h == 0xF) P.mask &= 0xFF00;                       /* DSP transfers move r0-r7 */
             if (call) P.mask &= 0xFF00;                           /* calls clobber r0-r7 */
             if (stop || call) {                                   /* the delay slot is ours too */
                 uint32_t o2 = off + 1;
@@ -260,7 +274,7 @@ static int prologue(uint32_t a) {
         if (!rd16(a + 2u * (uint32_t)k, &op)) return 0;
         if ((op & 0xFF0F) == 0x2F06 || op == 0x4F22) return 1;
         if (op == 0x000B || op == 0xFFFF || op == 0x0000) return 0;
-        sh4_decode((uint16_t)op, a, 0, 0, 0, txt, sizeof txt);
+        sh4_decode((uint16_t)op, a, dec_rd, 0, 0, txt, sizeof txt);
         if (txt[0] == '.') return 0;
     }
     return 0;
@@ -375,6 +389,11 @@ int an_xrefs(src_t *s, uint32_t target, an_xref_t *out, int max, an_progress_fn 
         uint16_t lmask = 0;
         for (uint32_t a = F[i].addr; a < a1 && rd16(a, &op); a += 2) {
             int n = (op >> 8) & 15, h = op >> 12, call = 0, end = 0;
+            if (h == 0xF) {                                       /* DSP: moves r0-r7 */
+                lmask &= 0xFF00;
+                a += (uint32_t)sh4_insn_len((uint16_t)op) - 2;    /* skip a second word */
+                continue;
+            }
             if (h == 0xD) {                                       /* mov.l @(disp,pc),Rn */
                 uint32_t la = (a & ~3u) + 4 + (op & 0xFF) * 4;
                 if (rd32(la, &v)) {

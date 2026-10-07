@@ -482,8 +482,11 @@ static void draw(int why) {
     fill(0, DIS_Y - 3, W - 1, DIS_Y - 3, C_SEP);
     sh4_insn_t in;
     uint32_t op;
-    int prev_delay = 0;
-    if (rd(0, top - 2, 2, &op)) { sh4_decode((uint16_t)op, top - 2, rd, 0, &in, t, sizeof t); prev_delay = in.delay; }
+    int prev_delay = 0, cont = 0;    /* cont: this row is the second word of a DSP instruction */
+    if (rd(0, top - 2, 2, &op)) {
+        sh4_decode((uint16_t)op, top - 2, rd, 0, &in, t, sizeof t);
+        prev_delay = in.delay; cont = in.len == 4;
+    }
     for (int i = 0; i < DIS_ROWS; i++) {
         uint32_t a = top + 2u * (uint32_t)i;
         int yy = DIS_Y + i * CH;
@@ -493,9 +496,10 @@ static void draw(int why) {
         if (S.bp_on && a == S.bp) text(1, yy, C_RET, "*");
         s_hex(t, a, 8);
         text(2, yy, a == pc ? C_KEY : C_ADDR, t);
-        if (!rd(0, a, 2, &op)) { text(11, yy, C_DIM, "----  (not mapped)"); prev_delay = 0; continue; }
+        if (!rd(0, a, 2, &op)) { text(11, yy, C_DIM, "----  (not mapped)"); prev_delay = cont = 0; continue; }
         s_hex(t, op, 4);
         text(11, yy, C_HEXW, t);
+        if (cont) { text(16, yy, C_DIM, "  (cont.)"); prev_delay = cont = 0; continue; }
         sh4_decode((uint16_t)op, a, rd, 0, &in, t, sizeof t);
         int col = 16 + (prev_delay ? 1 : 0);
         text(col, yy, prev_delay ? C_SLOT : insn_color(&in), t);
@@ -509,6 +513,7 @@ static void draw(int why) {
             text(cc, yy, C_LIT, c);
         }
         prev_delay = in.delay;
+        cont = in.len == 4;
     }
 
     /* keys */

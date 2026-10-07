@@ -234,17 +234,21 @@ static void draw_regs(const gdb_cpu_state_t *s, int why) {
     int rows = (STAT_Y - 1 - y) / UI_CH;
     uint32_t a0 = pc - 6, op;
     sh4_insn_t in;
-    int prev_delay = 0;
-    if (mem_rd(0, a0 - 2, 2, &op)) { sh4_decode((uint16_t)op, a0 - 2, mem_rd, 0, &in, t, sizeof t); prev_delay = in.delay; }
+    int prev_delay = 0, cont = 0;    /* cont: this row is the second word of a DSP instruction */
+    if (mem_rd(0, a0 - 2, 2, &op)) {
+        sh4_decode((uint16_t)op, a0 - 2, mem_rd, 0, &in, t, sizeof t);
+        prev_delay = in.delay; cont = in.len == 4;
+    }
     for (int i = 0; i < rows; i++) {
         uint32_t a = a0 + 2u * (uint32_t)i;
         int yy = y + i * UI_CH;
         if (a == pc) drect(0, yy - 1, DWIDTH - 1, yy + UI_CH - 2, C_CUR);
-        if (!mem_rd(0, a, 2, &op)) { prev_delay = 0; continue; }
+        if (!mem_rd(0, a, 2, &op)) { prev_delay = cont = 0; continue; }
         if (a == pc) txt(0, yy, C_KEY, ">");
         else if (D.bp_on && a == D.bp) txt(0, yy, C_RET, "*");
         snprintf(w, sizeof w, "%08lx", (unsigned long)a); txt(1, yy, C_ADDR, w);
         snprintf(w, sizeof w, "%04lx", (unsigned long)op); txt(10, yy, C_HEXW, w);
+        if (cont) { txt(15, yy, C_DIM, "  (cont.)"); prev_delay = cont = 0; continue; }
         sh4_decode((uint16_t)op, a, mem_rd, 0, &in, t, sizeof t);
         int col = 15 + (prev_delay ? 1 : 0);
         txt(col, yy, prev_delay ? C_SLOT : insn_color(&in), t);
@@ -258,6 +262,7 @@ static void draw_regs(const gdb_cpu_state_t *s, int why) {
             txt(cc, yy, ccol, w);
         }
         prev_delay = in.delay;
+        cont = in.len == 4;
     }
 
     /* keys */

@@ -14,7 +14,9 @@ Normalisation (the two printers differ only in cosmetics):
   * immediates: sh4dis prints "#0x-10 ; -16" / "#0xff ; -1"; the C prints "#-16" / "#-1".
     Both sides are rewritten to "#<signed decimal>" (logic ops keep unsigned hex on both).
   * sh4dis' trailing "    ; <decimal>" comments are dropped; "; =0x..." literals are kept.
-  * FPU (0xF---): sh4dis only says "fpu ...": counted, not compared.
+  * The SH7305 is an SH4AL-DSP: the 0xF--- space (DSP, sh4dis says "fpu ...") and the slots the
+    DSP takes over elsewhere (sh4dis: fpul/fpscr; also mod rs re, setrc ldrc ldrs ldre, clrdmxy
+    setdmx setdmy) are counted, not compared: tools/verify_dsp.py checks them against objdump.
 Every remaining difference is listed by category with examples and a verdict has to be
 given by hand (see KNOWN_PY_BUGS: cases where the Python is wrong per the SH-4A manual).
 """
@@ -82,6 +84,16 @@ KNOWN_PY_BUGS = {
     "stc.l sgr": "SH-4A", "stc.l dbr": "SH-4", "ldc r": "dbr/sgr forms",
 }
 
+def dsp_slot(op):
+    """A word whose meaning the DSP sets (see tools/verify_dsp.py, which checks them)."""
+    lo, k = op & 0xF00F, (op >> 4) & 15
+    return (op >> 12 == 0xF
+            or (lo in (0x000A, 0x4002, 0x4006, 0x400A) and k in (5, 6, 7, 8, 9, 10, 11))
+            or (lo in (0x0002, 0x4003, 0x4007, 0x400E) and k in (5, 6, 7))
+            or (lo == 0x4004 and k in (1, 3))
+            or op in (0x0088, 0x0098, 0x00C8)
+            or (op & 0xFF00) in (0x8200, 0x8A00, 0x8C00, 0x8E00))
+
 total = fpu = same = 0
 diffs = collections.defaultdict(list)
 pc = start
@@ -93,7 +105,7 @@ for line in proc.stdout:
     word_s, ctext = rest.strip().split("   ", 1) if "   " in rest.strip() else (rest.strip(), "")
     op = int(word_s, 16)
     total += 1
-    if op >> 12 == 0xF:
+    if dsp_slot(op):
         fpu += 1
     else:
         ptext = sh4dis.decode(op, pc)
@@ -109,7 +121,7 @@ for line in proc.stdout:
     pc += 2
 proc.wait()
 
-print(f"image {image} base {base:#x}: {total} words, {fpu} FPU (not compared), {same} identical, "
+print(f"image {image} base {base:#x}: {total} words, {fpu} DSP (not compared: verify_dsp.py), {same} identical, "
       f"{total - fpu - same} different")
 for key, lst in sorted(diffs.items(), key=lambda kv: -len(kv[1])):
     n = len(lst)

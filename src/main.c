@@ -289,15 +289,18 @@ static void draw_listing(void) {
     title_bar(t, right);
     int funcs = an_funcs_ready();
 
-    int prev_delay = 0;
+    int prev_delay = 0, cont = 0;    /* cont: this row is the second word of a DSP instruction */
     uint32_t op;
     sh4_insn_t in;
-    if (src_read(&S, top - 2, 2, &op)) { sh4_decode((uint16_t)op, top - 2, rd, &S, &in, txt, sizeof txt); prev_delay = in.delay; }
+    if (src_read(&S, top - 2, 2, &op)) {
+        sh4_decode((uint16_t)op, top - 2, rd, &S, &in, txt, sizeof txt);
+        prev_delay = in.delay; cont = in.len == 4;
+    }
     for (int i = 0; i < ROWS; i++) {
         uint32_t a = top + 2u * (uint32_t)i;
         int y = LIST_Y + i * ROW_H;
         if (i == cur) drect(0, y - 1, DWIDTH - 1, y + ROW_H - 2, C_CUR);
-        if (!src_read(&S, a, 2, &op)) { prev_delay = 0; continue; }
+        if (!src_read(&S, a, 2, &op)) { prev_delay = cont = 0; continue; }
         snprintf(t, sizeof t, "%08lx", (unsigned long)a); text(0, y, C_ADDR, t);
         snprintf(t, sizeof t, "%04lx", (unsigned long)op); text(9, y, C_HEXW, t);
         int fi = funcs ? an_func_before(a) : -1;
@@ -311,9 +314,10 @@ static void draw_listing(void) {
                 textn(14, y, C_DATA, txt, COLS - 14);
                 if (nm) { text(big ? 36 : 42, y, C_DIM, ";"); textn((big ? 36 : 42) + 1, y, C_NAME, nm, COLS - 43); }
             } else text(14, y, C_DIM, "  (cont.)");
-            prev_delay = 0;
+            prev_delay = cont = 0;
             continue;
         }
+        if (cont) { text(14, y, C_DIM, "  (cont.)"); prev_delay = cont = 0; continue; }
         sh4_decode((uint16_t)op, a, rd, &S, &in, txt, sizeof txt);
         int col = 14 + (prev_delay ? 1 : 0);
         int color = prev_delay ? C_SLOT : kind_color(&in, txt);
@@ -329,6 +333,7 @@ static void draw_listing(void) {
             if (cc < COLS - 2) { text(cc, y, C_DIM, ";"); textn(cc + 1, y, ccol, com, COLS - cc - 1); }
         }
         prev_delay = in.delay;
+        cont = in.len == 4;
     }
     static const char *lab[6] = { "OPEN", "GOTO", "HEX", "STR", "HDR", "ROM" };
     status_bar(lab);

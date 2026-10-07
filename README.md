@@ -1,4 +1,4 @@
-# DASM — an SH-4A disassembler that runs on the fx-CG50
+# DASM — an SH4AL-DSP disassembler that runs on the fx-CG50
 
 DASM is a gint add-in that turns the Casio fx-CG50 into its own reverse-engineering tool.
 Pick any add-in (`.g3a`) in storage memory, or the calculator's OS ROM itself, and browse
@@ -30,10 +30,15 @@ test add-in of ours.
 
 - **Open anything:** every `.g3a` in `\\fls0` (read through the OS's BFile calls, cached in
   4 KB pages), or the **OS ROM** mapped at `0x80000000` (F6).
-- **Full SH-4A decoding:** the whole integer, system and FPU set plus the SH-4A additions
-  (`movli`/`movco`, `movua`, `icbi`, `prefi`, `synco`, banked registers). The decoder was
-  checked against an independent disassembler over every one of the 6.3 million instruction
-  words in OS 3.60, with no unexplained differences.
+- **Full SH4AL-DSP decoding** (the SH7305's CPU: SH-4A without an FPU, with a DSP unit): the
+  whole integer and system set, the SH-4A additions (`movli`/`movco`, `movua`, `icbi`, `prefi`,
+  `synco`, banked registers) and the DSP instructions: `movx`/`movy`/`movs` transfers, the
+  32-bit parallel instructions (`padd`, `pmuls`, `dct`/`dcf` conditionals...; their second word
+  shows as `(cont.)`), the DSP and repeat registers (`dsr`, `a0`, `x0`...`y1`, `mod`, `rs`, `re`),
+  `setrc`/`ldrc`/`ldrs`/`ldre`. The decoder was checked against an independent disassembler over
+  every one of the 6.3 million instruction words in OS 3.60, and the DSP set against GNU objdump
+  (`-m sh4al-dsp`) over every 16-bit word and all the 32-bit forms, with no unexplained
+  differences.
 - **Literal pools resolved:** `mov.l @(disp,pc),rN` shows the value it loads
   (`;=0x08105f14`), and `mov.w` shows it in decimal too.
 - **Calls and jumps followed:** EXE on a `bsr`/`bra`/`bt`/`bf` jumps to the target, and EXIT
@@ -236,6 +241,7 @@ None of these is needed to build DASM.
 | `python3 make_icons.py` | draws the menu icons (`assets-cg/icon-*.png`) |
 | `python3 tools/make_font.py` | regenerates the large font, `src/font_aa.h`, from DejaVu Sans Mono |
 | `python3 tools/fetch_syscalls.py` | regenerates the syscall names, `src/syscall_names.h`, from libfxcg |
+| `python3 tools/verify_dsp.py` | compares the DSP decoding with GNU objdump (`sh-elf-objdump`, in the fxSDK) |
 | `python3 tools/readme_shots.py` | retakes the README screenshots on the emulator |
 | `python3 tools/verify_decoder.py` | compares DASM's decoder with the emulator's disassembler |
 | `python3 tools/proto_funcs.py` | the function-detection prototype and its score |
