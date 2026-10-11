@@ -159,9 +159,7 @@ it's one or the other. Channel 1 does the stepping.
 Limits: the add-in's timers and interrupts are paused while it is stopped. Don't put a software
 breakpoint in code that runs with interrupts blocked (exception and interrupt handlers before
 they unblock): a trap there resets the calculator. The page table it uses is OS 3.60's.
-Stopping at the first instruction, stepping and the hardware breakpoint are verified on a real
-fx-CG50 with OS 3.60; software breakpoints, the watchpoint, the memory view and go-to so far
-only on the emulator. If the calculator ever freezes, the RESTART button on its back recovers
+All of it is verified on a real fx-CG50 with OS 3.60. If the calculator ever freezes, the RESTART button on its back recovers
 it without losing anything.
 
 The **sin** key runs the debugger's self-test: a breakpoint in DASM's own code, with the registers
@@ -275,11 +273,11 @@ README describes. Neither repository contains any Casio firmware.
 ## Status and next steps
 
 Verified on a real fx-CG50 (OS 3.60): the browser, including reading every add-in's contents,
-function detection, cross-references, both themes and the debugger.
+function detection, cross-references, both themes and the debugger (software and hardware
+breakpoints, the watchpoint, the memory view).
 
 Next:
-- **Debugger:** test the software breakpoints and the watchpoint on the real calculator; DASM's
-  full listing on a stop (function names, cross-references).
+- **Debugger:** DASM's full listing on a stop (function names, cross-references).
 - **Browser:** bookmarks and comments saved to a side file (which could also cache the function
   table, so the OS ROM doesn't take 15 s each time), and an overview bar of the whole file.
 
