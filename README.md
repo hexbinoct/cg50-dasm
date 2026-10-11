@@ -6,7 +6,7 @@ it as a colour disassembly listing. Follow calls and jumps, then come back. See 
 in the file and, for any function or address, everything that calls or references it. Read the
 literal pools, see which OS syscall is being called, and switch to a hex dump or a strings list.
 It also has a **debugger**: start any add-in under it and it stops at its first instruction, so
-you can step through it, set a breakpoint and read the CPU registers.
+you can step through it, set breakpoints and a watchpoint, and read the registers and memory.
 
 DASM was developed and tested largely on the [casio-cg50](https://github.com/hexbinoct/casio-cg50)
 fx-CG50 emulator, which runs the calculator's own OS. Every screen below is a screenshot from it.
@@ -24,7 +24,7 @@ test add-in of ours.
 | ![Header pane](docs/img/header.png) | ![Light theme](docs/img/listing-light.png) |
 | **Header (F5):** name, version, sizes, checksum, the add-in's icon | **Light theme (S⇔D):** easier to read on the calculator's own screen |
 | ![The debugger, stopped](docs/img/debugger.png) | ![Starting the debugger](docs/img/debugger-arm.png) |
-| **Debugger:** registers (changed ones in yellow), flags, and the code with PC marked | **F2 in the file picker** arms the debugger for the next add-in you open |
+| **Debugger:** stopped at a breakpoint (`*`): registers (changed ones in yellow), flags, the code with PC marked | **F2 in the file picker** arms the debugger for the next add-in you open |
 
 ## What it can do
 
@@ -62,7 +62,8 @@ test add-in of ours.
   slots are indented.
 - **Hex view (F3), strings (F4), header (F5), go to address (F2).**
 - **Debugger (F2 in the file picker):** stops the next add-in you open at its first instruction;
-  then single step, step over calls, one breakpoint, continue. Described below.
+  then single step, step over calls, up to 16 breakpoints, a watchpoint on memory, a memory view,
+  go to any address, continue. Described below.
 - **Font setting (OPTN):** switches the listing font, described below.
 - **Light or dark theme (S⇔D):** the dark theme is the default; the light one is easier to read
   on the calculator's own screen. DASM remembers the choice, and the debugger uses it too.
@@ -115,10 +116,11 @@ you press VARS or X,θ,T.
 
 ## Debugger
 
-The debugger uses the CPU's own breakpoint hardware (the SH7305's User Break Controller), so the
-program being debugged is not modified.
+The debugger is built on the CPU's own breakpoint hardware (the SH7305's User Break Controller)
+and a small resident *monitor* that takes over the screen and keyboard while the add-in is
+stopped.
 
-1. In DASM's file picker, press **F2**. DASM copies a small resident *monitor* (about 25 KB) into
+1. In DASM's file picker, press **F2**. DASM copies the monitor (about 32 KB) into
    a part of RAM that neither the OS nor add-ins use (`0x8C4E0000`–`0x8C7FFFFF`, checked on a
    real calculator), and explains the keys.
 2. Press **EXE**. DASM sets a breakpoint on `0x00300000`, where every add-in starts, and opens the
@@ -130,18 +132,37 @@ program being debugged is not modified.
 |---|---|
 | F1 | single step (one instruction; a branch together with its delay slot) |
 | F2 | step over a call (`bsr`/`jsr`/`bsrf`): run it and stop after its delay slot |
-| UP / DOWN, LEFT / RIGHT | move the cursor / a page through the code |
-| F3 | set the breakpoint at the cursor (F3 on it again removes it) |
-| EXE | continue until the breakpoint |
-| EXIT | detach: the add-in runs on normally |
+| UP / DOWN, LEFT / RIGHT | move the cursor / a page through the code (or the memory view) |
+| F3 | a breakpoint at the cursor (F3 on it again removes it) |
+| F4 | go to an address: 0–9, F1–F6 = A–F, DEL, EXE. It suggests what the cursor line points at (a branch target or a literal) |
+| F5 | memory view (hex and text) / back to the code |
+| F6 | a watchpoint: an address, then 1 read, 2 write or 3 either; F6 again removes it |
+| EXE | continue (until a breakpoint or the watchpoint) |
+| EXIT | detach: all breakpoints are removed and the add-in runs on normally |
 | S⇔D | switch the theme |
 
 Going back to DASM from the MAIN MENU, instead of opening another add-in, disarms the debugger.
 
-Limits, for now: one breakpoint (the controller has two channels, and stepping needs the other),
-and the add-in's timers and interrupts are paused while it is stopped. Verified on a real fx-CG50
-with OS 3.60. If the calculator ever freezes, the RESTART button on its back recovers it without
-losing anything.
+**Breakpoints.** In the add-in's own code a breakpoint is a *software* one: the monitor copies
+that 4 KB page of code into RAM, has the OS map the copy instead of the flash, and puts a
+`trapa` instruction there while the add-in runs (the original comes back at every stop, so the
+listing always shows the real code). Up to 16 breakpoints, in up to 16 pages. The trap reaches
+the monitor through a small block that stands in for the add-in's exception vectors and passes
+everything else on: in place of the OS's vectors, or, in a gint add-in, through gint's own
+exception entry, which the monitor patches. Anywhere else (OS code, a delay slot, RAM) the
+breakpoint is the *hardware* one, the controller's channel 0; one at a time.
+
+**Watchpoint.** Channel 0 again, on operand accesses: it stops after the instruction that read
+or wrote the 4-byte word at the address. It shares the channel with the hardware breakpoint, so
+it's one or the other. Channel 1 does the stepping.
+
+Limits: the add-in's timers and interrupts are paused while it is stopped. Don't put a software
+breakpoint in code that runs with interrupts blocked (exception and interrupt handlers before
+they unblock): a trap there resets the calculator. The page table it uses is OS 3.60's.
+Stopping at the first instruction, stepping and the hardware breakpoint are verified on a real
+fx-CG50 with OS 3.60; software breakpoints, the watchpoint, the memory view and go-to so far
+only on the emulator. If the calculator ever freezes, the RESTART button on its back recovers
+it without losing anything.
 
 The **sin** key runs the debugger's self-test: a breakpoint in DASM's own code, with the registers
 and single steps.
@@ -257,8 +278,8 @@ Verified on a real fx-CG50 (OS 3.60): the browser, including reading every add-i
 function detection, cross-references, both themes and the debugger.
 
 Next:
-- **Debugger:** unlimited breakpoints (by running the add-in's code from a copy in RAM),
-  watchpoints on memory, and DASM's full listing on a stop.
+- **Debugger:** test the software breakpoints and the watchpoint on the real calculator; DASM's
+  full listing on a stop (function names, cross-references).
 - **Browser:** bookmarks and comments saved to a side file (which could also cache the function
   table, so the OS ROM doesn't take 15 s each time), and an overview bar of the whole file.
 

@@ -11,7 +11,18 @@
 #define MON_BASE    0x8C4E0000u     /* P1; the same RAM is 0xAC4E0000 through P2 (uncached) */
 #define MON_LIMIT   0x8C800000u     /* end of the free DRAM */
 #define MON_MAGIC   0x4D4F4E31u     /* "MON1" */
-#define MON_VERSION 1u
+#define MON_VERSION 2u
+
+/* Above the monitor's own memory (its bss must end below MON_PAGES):
+ *   MON_PAGES  RAM copies of the target's code pages that hold software breakpoints
+ *              (MON_NPAGES x 4 KB; the OS's add-in page table is pointed at them);
+ *   MON_HOOK   the hook block (entry.S): the target's VBR while software breakpoints are set,
+ *              forwarding everything else to the VBR it replaced. A fixed address, kept
+ *              between debug sessions (a gint target may hand it back to the OS as its VBR);
+ *   MON_THEME  (theme.h) the theme word, the last 8 bytes. */
+#define MON_PAGES   0x8C700000u
+#define MON_NPAGES  16
+#define MON_HOOK    0x8C7F0000u
 
 /* At MON_BASE (monitor/entry.S). */
 typedef struct {

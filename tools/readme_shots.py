@@ -7,8 +7,8 @@ script; each shot is the add-in's whole 396x224 frame. DASM browses only its own
 tools/emulator_path.txt, see emulator_path.py) with a 32 MB dump of your own calculator
 (os/flash_dump/flash_full_32mb.bin + cg50_state_32mb.bin there). The picker position in SCRIPT
 assumes that dump's file list. The debugger shots come from the emulator's TestMonitorDasmGint
-probe: DASM's F2 screen, then its monitor stopped inside KeyProbe (a small gint add-in of ours
-on that dump).  Run:  python3 tools/readme_shots.py
+probe: DASM's F2 screen, then its monitor stopped at a software breakpoint inside KeyProbe (a
+small gint add-in of ours on that dump).  Run:  python3 tools/readme_shots.py
 """
 import os
 import shutil
@@ -35,7 +35,7 @@ SCRIPT = [(DOWN, None)] * 20 + [(DOWN, "picker"), (EXE, None), (DOWN, "listing")
           (XOT, "references")]
 
 # the debugger: TestMonitorDasmGint's panel shots ($TMPDIR/cg50_mondbg_gint_<shot>.png)
-DEBUGGER = [("01_explain", "debugger-arm"), ("06_gint_step", "debugger")]
+DEBUGGER = [("01_explain", "debugger-arm"), ("05_gint_bp", "debugger")]
 
 
 def main():
